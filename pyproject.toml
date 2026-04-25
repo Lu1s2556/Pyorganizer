@@ -1,22 +1,25 @@
 [project]
 name = "pyorganizer"
 version = "0.1.0"
-description = "Bot gestor de archivos en segund plano"
+description = "Bot organizador de archivos inteligente"
 authors = [
-    {name = "Lu1s2556",email = "luiserojasp06@gmail.com"}
+    {name = "Lu1s2556", email = "luiserojasp06@gmail.com"}
 ]
-requires-python = "3.12.7"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
 dependencies = [
-    "pyside6 (==6.10.0)",
     "watchdog (==4.0.0)",
     "python-dateutil (==2.9.0)",
-    "textblob (==0.17.1)",
+    "pyside6 (==6.8.1)", # Versión estable actual para 3.12
     "scikit-learn (==1.5.2)",
-    "nltk (==3.8.1)",
-    "pywin32 (==306)"
+    "textblob (==0.17.1)",
+    "nltk (>=3.9.1)" # Corregido de nlkt a nltk y versión compatible
 ]
 
+[tool.poetry]
+# Esta línea es la que evita el error de "No file/folder found"
+package-mode = false
 
 [build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
+requires = ["poetry-core>=2.0.0"]
 build-backend = "poetry.core.masonry.api"
