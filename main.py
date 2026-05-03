@@ -1,6 +1,6 @@
 import sys
 from os import path
-from app.vista.vista import DashboardOrganizador 
+from app.vista.vista import DashboardOrganizador
 from PySide6.QtWidgets import QApplication
 
 # Aseguramos que Python encuentre la carpeta 'app'

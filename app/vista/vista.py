@@ -1,356 +1,219 @@
 import sys
 import os
 import re
+import shutil
+from pathlib import Path
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QLabel, QPushButton, QFrame, QGridLayout, 
                              QScrollArea, QSizePolicy, QGraphicsDropShadowEffect, QLineEdit)
 from PySide6.QtCore import Qt, QSize, QTimer
-from PySide6.QtGui import QFont, QColor, QIcon
-
-# --- IMPORTACIÓN DE IA (Scikit-Learn) ---
-from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.naive_bayes import MultinomialNB
+from PySide6.QtGui import QFont, QColor
 
 # =================================================================
-# 🧠 MODELO: IA DE CLASIFICACIÓN Y EXTRACCIÓN (NUEVO COMPONENTE)
+# 🧠 LÓGICA DEL ASISTENTE (CEREBRO)
 # =================================================================
-class AnalizadorIA:
+class AsistenteVigiData:
     def __init__(self):
-        self.vectorizador = CountVectorizer()
-        self.modelo = MultinomialNB()
-        self.categorias = {
-            "Documentos": ["pdf", "docx", "txt", "tareas", "informe", "escrito", "tesis", "universidad"],
-            "Imagenes": ["fotos", "capturas", "dibujos", "png", "jpg", "imagenes", "vacaciones"],
-            "Videos": ["peliculas", "grabaciones", "mp4", "videos", "clips"],
-            "Codigo": ["python", "scripts", "programas", "html", "codigo", "desarrollo"]
+        self.rutas_base = {
+            "documentos": str(Path.home() / "Documents"),
+            "fotos": str(Path.home() / "Pictures"),
+            "descargas": str(Path.home() / "Downloads"),
+            "escritorio": str(Path.home() / "Desktop")
         }
-        self._entrenar()
+        self.contexto = {"paso": "inicio", "accion": None, "objetivo": None, "nuevo_nombre": None, "ruta_destino": None}
 
-    def _entrenar(self):
-        textos, etiquetas = [], []
-        for cat, palabras in self.categorias.items():
-            for p in palabras:
-                textos.append(p)
-                etiquetas.append(cat)
-        X = self.vectorizador.fit_transform(textos)
-        self.modelo.fit(X, etiquetas)
+    def procesar_mensaje(self, entrada):
+        entrada = entrada.lower().strip()
+        
+        if self.contexto["paso"] == "inicio":
+            # Borrar
+            if any(x in entrada for x in ["borra", "elimina"]):
+                match = re.search(r"(?:borra|elimina)\s+([\w\s\.]+)", entrada)
+                if match:
+                    self.contexto.update({"objetivo": match.group(1).strip(), "accion": "borrar", "paso": "preguntar_ruta"})
+                    return f"¿En qué ubicación está '{self.contexto['objetivo']}'?"
+            # Renombrar
+            if "renombra" in entrada or "cambia el nombre" in entrada:
+                match = re.search(r"nombre\s+de\s+([\w\s\.]+)\s+a\s+([\w\s\.]+)", entrada)
+                if match:
+                    self.contexto.update({"objetivo": match.group(1).strip(), "nuevo_nombre": match.group(2).strip(), "accion": "renombrar", "paso": "preguntar_ruta"})
+                    return f"¿En qué carpeta está '{self.contexto['objetivo']}'?"
+            # Crear Carpeta
+            if "crear" in entrada or "carpeta" in entrada:
+                match_c = re.search(r"carpeta\s+([\w\s]+)", entrada)
+                self.contexto.update({"objetivo": match_c.group(1).strip().title() if match_c else "Nueva", "accion": "crear", "paso": "preguntar_ruta"})
+                return f"¿Donde creo '{self.contexto['objetivo']}'?"
 
-    def extraer_nombre_especifico(self, texto):
-        patrones = [r"llamada\s+([\w\s]+)", r"nombre\s+([\w\s]+)", r"carpeta\s+([\w\s]+)"]
-        for p in patrones:
-            coincidencia = re.search(p, texto, re.IGNORECASE)
-            if coincidencia:
-                return coincidencia.group(1).strip().title()
-        return None
+            return "Hola, soy VigiData. ¿Qué archivos o carpetas gestionamos?"
 
-    def predecir_categoria(self, texto):
-        X_nuevo = self.vectorizador.transform([texto.lower()])
-        return self.modelo.predict(X_nuevo)[0]
+        elif self.contexto["paso"] == "preguntar_ruta":
+            ruta_final = self.rutas_base.get(entrada) or (entrada if os.path.exists(entrada) else None)
+            if not ruta_final: return "Ruta no válida. Dime: Escritorio, Documentos o Descargas."
+            self.contexto["ruta_destino"] = ruta_final
+            return self.ejecutar_accion()
 
-# --- NOTIFICACIÓN FLOTANTE (NUEVO COMPONENTE) ---
-class NotificacionToast(QFrame):
-    def __init__(self, mensaje, padre=None):
-        super().__init__(padre)
-        self.setWindowFlags(Qt.ToolTip | Qt.FramelessWindowHint)
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setStyleSheet("background-color: #28a745; color: white; border-radius: 8px; padding: 12px;")
-        layout = QHBoxLayout(self)
-        self.label = QLabel(f"🤖 IA: {mensaje}")
-        self.label.setStyleSheet("font-weight: bold; font-size: 12px; border: none;")
-        layout.addWidget(self.label)
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.hide)
+    def ejecutar_accion(self):
+        destino = Path(self.contexto["ruta_destino"])
+        obj, accion = self.contexto["objetivo"], self.contexto["accion"]
+        try:
+            target = destino / obj
+            if accion == "crear":
+                target.mkdir(parents=True, exist_ok=True)
+                res = f"✅ Carpeta '{obj}' creada en {entrada}."
+            elif accion == "borrar":
+                if target.is_file(): os.remove(target)
+                else: shutil.rmtree(target)
+                res = f"🗑️ '{obj}' eliminado."
+            elif accion == "renombrar":
+                nuevo = destino / self.contexto["nuevo_nombre"]
+                os.rename(target, nuevo)
+                res = f"📝 Renombrado a '{nuevo.name}'."
+            self.contexto = {"paso": "inicio", "accion": None, "objetivo": None, "nuevo_nombre": None, "ruta_destino": None}
+            return res
+        except Exception as e: return f"❌ Error: {str(e)}"
 
-    def mostrar(self, pos):
-        self.move(pos)
-        self.show()
-        self.timer.start(3500)
-
-# --- CLASE DE TARJETA ESTILIZADA (REUTILIZABLE) ---
+# =================================================================
+# 🎨 INTERFAZ (COMO LA FOTO)
+# =================================================================
 class TarjetaMetrica(QFrame):
-    def __init__(self, titulo, valor, color_acento, parent=None):
+    def __init__(self, titulo, valor, color, sub, parent=None):
         super().__init__(parent)
-        self.setMinimumHeight(100)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        
-        self.setStyleSheet(f"""
-            QFrame {{
-                background-color: #252526;
-                border-radius: 8px;
-                border: 1px solid #3e3e42;
-                padding: 15px;
-            }}
-            QFrame:hover {{
-                border: 1px solid {color_acento};
-            }}
-        """)
-        
-        sombra = QGraphicsDropShadowEffect(self)
-        sombra.setBlurRadius(10)
-        sombra.setXOffset(0)
-        sombra.setYOffset(4)
-        sombra.setColor(QColor(0, 0, 0, 50))
-        self.setGraphicsEffect(sombra)
+        self.setMinimumHeight(120)
+        self.setStyleSheet(f"background: #181818; border-radius: 10px; padding: 15px;")
+        l = QVBoxLayout(self)
+        t = QLabel(titulo); t.setStyleSheet("color: #aaaaaa; font-size: 11px; font-weight: bold;")
+        v = QLabel(valor); v.setStyleSheet(f"color: {color}; font-size: 32px; font-weight: bold; margin: 5px 0;")
+        s = QLabel(sub); s.setStyleSheet("color: #555555; font-size: 10px;")
+        l.addWidget(t); l.addWidget(v); l.addWidget(s)
 
-        layout = QVBoxLayout(self)
-        self.lbl_titulo = QLabel(titulo)
-        self.lbl_titulo.setStyleSheet("color: #aaaaaa; font-size: 13px; font-weight: bold; border: none;")
-        
-        self.lbl_valor = QLabel(valor)
-        self.lbl_valor.setStyleSheet(f"color: {color_acento}; font-size: 32px; font-weight: bold; border: none;")
-        
-        self.lbl_subtítulo = QLabel("Actualizado")
-        self.lbl_subtítulo.setStyleSheet("color: #666666; font-size: 11px; border: none;")
-
-        layout.addWidget(self.lbl_titulo)
-        layout.addWidget(self.lbl_valor)
-        layout.addWidget(self.lbl_subtítulo)
-        layout.addStretch()
-
-# --- CLASE PRINCIPAL DEL DASHBOARD ---
 class DashboardOrganizador(QMainWindow):
     def __init__(self):
         super().__init__()
-        # INICIALIZACIÓN DE LA IA
-        self.ia = AnalizadorIA()
+        self.asistente = AsistenteVigiData()
+        self.setWindowTitle("VigiData - Organizador Inteligente")
+        self.resize(1200, 800)
+        self.setStyleSheet("QMainWindow { background-color: #0c0c0c; }")
+
+        self.central = QWidget()
+        self.setCentralWidget(self.central)
+        self.main_layout = QHBoxLayout(self.central)
+        self.main_layout.setContentsMargins(0,0,0,0)
+        self.main_layout.setSpacing(0)
+
+        self.init_sidebar()
+        self.init_content()
+        self.init_chat_floating()
+
+    def init_sidebar(self):
+        sidebar = QFrame(); sidebar.setFixedWidth(240)
+        sidebar.setStyleSheet("background-color: #121212; border-right: 1px solid #222;")
+        l = QVBoxLayout(sidebar)
         
-        self.setWindowTitle("VigiData - Organizador Inteligente de Archivos")
-        self.resize(1100, 750)
-        self.setMinimumSize(900, 650)
+        logo = QLabel("📁 VigiData"); logo.setStyleSheet("color: white; font-size: 20px; font-weight: bold; margin: 25px;")
+        l.addWidget(logo)
+
+        # Botones (Igual que la foto)
+        btn_active = QPushButton("  Panel Resumen"); btn_active.setStyleSheet("background: #3467eb; color: white; text-align: left; padding: 12px; border-radius: 5px; font-weight: bold;")
+        l.addWidget(btn_active)
+        for text in ["Reglas de IA", "Historial"]:
+            b = QPushButton(f"  {text}"); b.setStyleSheet("color: #888; text-align: left; padding: 12px; border: none;")
+            l.addWidget(b)
         
-        self.set_estilo_base()
-
-        self.widget_central = QWidget()
-        self.setCentralWidget(self.widget_central)
-        self.layout_principal = QHBoxLayout(self.widget_central)
-        self.layout_principal.setContentsMargins(0, 0, 0, 0)
-        self.layout_principal.setSpacing(0)
-
-        self.inicializar_barra_lateral()
-        self.inicializar_area_contenido()
-
-    def set_estilo_base(self):
-        fuente_id = QFont("Segoe UI", 10)
-        self.setFont(fuente_id)
-        self.setStyleSheet("""
-            QMainWindow { background-color: #1e1e1e; }
-            QWidget { color: #cccccc; }
-            QLabel { background: transparent; }
-        """)
-
-    def inicializar_barra_lateral(self):
-        self.barra_lateral = QFrame()
-        self.barra_lateral.setFixedWidth(240)
-        self.barra_lateral.setStyleSheet("""
-            QFrame { background-color: #252526; border-right: 1px solid #3e3e42; }
-            QPushButton {
-                color: #cccccc; background-color: transparent; border: none;
-                padding: 12px 20px; text-align: left; font-size: 14px;
-                font-weight: 500; border-radius: 5px; margin: 2px 10px;
-            }
-            QPushButton:hover { background-color: #3e3e42; color: white; }
-            QPushButton#activo { background-color: #007acc; color: white; font-weight: bold; }
-            QPushButton#boton_accion { background-color: #28a745; color: white; font-weight: bold; margin-top: 20px; }
-        """)
+        l.addStretch()
         
-        layout_lateral = QVBoxLayout(self.barra_lateral)
-        layout_lateral.setContentsMargins(0, 10, 0, 10)
-        layout_lateral.setSpacing(5)
+        btn_scan = QPushButton("⚡ ESCANEAR AHORA"); btn_scan.setStyleSheet("background: #28a745; color: white; font-weight: bold; padding: 15px; border-radius: 5px; margin: 10px;")
+        l.addWidget(btn_scan)
+        self.main_layout.addWidget(sidebar)
 
-        contenedor_logo = QWidget()
-        layout_logo = QHBoxLayout(contenedor_logo)
-        self.lbl_logo_icono = QLabel("📁")
-        self.lbl_logo_icono.setStyleSheet("font-size: 24px;")
-        self.lbl_logo_texto = QLabel("VigiData")
-        self.lbl_logo_texto.setStyleSheet("color: white; font-weight: bold; font-size: 18px;")
-        layout_logo.addWidget(self.lbl_logo_icono)
-        layout_logo.addWidget(self.lbl_logo_texto)
-        layout_logo.addStretch()
-        layout_lateral.addWidget(contenedor_logo)
+    def init_content(self):
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(30, 30, 30, 30)
 
-        # --- PANEL DE COMANDO IA (AGREGADO) ---
-        self.panel_ia = QFrame()
-        self.panel_ia.setStyleSheet("background-color: #1e1e1e; border-radius: 8px; border: 1px solid #3e3e42; margin: 10px;")
-        layout_ia = QVBoxLayout(self.panel_ia)
-        lbl_ia = QLabel("COMANDO INTELIGENTE")
-        lbl_ia.setStyleSheet("color: #007acc; font-size: 10px; font-weight: bold; border: none;")
-        self.entrada_ia = QLineEdit()
-        self.entrada_ia.setPlaceholderText("Ej: Carpeta llamada Tareas")
-        self.entrada_ia.setStyleSheet("background-color: #2d2d30; color: white; padding: 8px; border: 1px solid #3e3e42;")
-        self.entrada_ia.returnPressed.connect(self.procesar_ia)
-        btn_ia = QPushButton("Ejecutar IA")
-        btn_ia.setStyleSheet("background-color: #007acc; color: white; font-weight: bold; padding: 5px; margin: 0px;")
-        btn_ia.clicked.connect(self.procesar_ia)
-        layout_ia.addWidget(lbl_ia)
-        layout_ia.addWidget(self.entrada_ia)
-        layout_ia.addWidget(btn_ia)
-        layout_lateral.addWidget(self.panel_ia)
+        # Header
+        head = QVBoxLayout()
+        tit = QLabel("Panel de Control"); tit.setStyleSheet("color: white; font-size: 26px; font-weight: bold;")
+        sub = QLabel("Bienvenido al organizador inteligente optimizado."); sub.setStyleSheet("color: #666; font-size: 14px;")
+        head.addWidget(tit); head.addWidget(sub)
+        layout.addLayout(head)
 
-        layout_lateral.addSpacing(10)
-        self.btn_inicio = QPushButton("  Panel Resumen")
-        self.btn_inicio.setObjectName("activo")
-        self.btn_reglas = QPushButton("  Reglas de IA")
-        self.btn_historial = QPushButton("  Historial")
-        self.btn_config = QPushButton("  Configuración")
+        # Métricas (Fila superior)
+        grid = QGridLayout()
+        grid.addWidget(TarjetaMetrica("ARCHIVOS PROCESADOS", "1,250", "white", "Actualizado"), 0, 0)
+        grid.addWidget(TarjetaMetrica("CATEGORÍAS IA", "12", "#a855f7", "Actualizado"), 0, 1)
+        grid.addWidget(TarjetaMetrica("PRECISIÓN NLP", "96.4%", "#22c55e", "Actualizado"), 0, 2)
+        grid.addWidget(TarjetaMetrica("ESPACIO LIBERADO", "14.2 GB", "#eab308", "Actualizado"), 0, 3)
+        layout.addLayout(grid)
+
+        # Centro (Gráfico y Lista)
+        center_h = QHBoxLayout()
         
-        layout_lateral.addWidget(self.btn_inicio)
-        layout_lateral.addWidget(self.btn_reglas)
-        layout_lateral.addWidget(self.btn_historial)
-        layout_lateral.addStretch()
+        # Gráfico (Mockup como en la foto)
+        chart_f = QFrame(); chart_f.setStyleSheet("background: #181818; border-radius: 10px; border: 1px solid #222;")
+        chart_l = QVBoxLayout(chart_f)
+        chart_l.addWidget(QLabel("Distribución de Archivos por Categoría", styleSheet="color:white; font-weight:bold;"))
+        mock_pie = QLabel("MOCKUP DE GRÁFICO TIPO PIE\n(Usa PyQtGraph aquí)"); mock_pie.setAlignment(Qt.AlignCenter); mock_pie.setStyleSheet("color: #333; border: 2px dashed #222; margin: 20px;")
+        chart_l.addWidget(mock_pie)
+        center_h.addWidget(chart_f, 2)
+
+        # Lista Actividad (Derecha)
+        act_f = QFrame(); act_f.setStyleSheet("background: #181818; border-radius: 10px; border: 1px solid #222;")
+        act_l = QVBoxLayout(act_f)
+        act_l.addWidget(QLabel("Últimas Acciones Inteligentes", styleSheet="color:white; font-weight:bold;"))
+        self.scroll_act = QScrollArea(); self.scroll_act.setWidgetResizable(True); self.scroll_act.setStyleSheet("border:none;")
+        self.act_cont = QWidget(); self.act_list = QVBoxLayout(self.act_cont); self.act_list.addStretch()
+        self.scroll_act.setWidget(self.act_cont)
+        act_l.addWidget(self.scroll_act)
+        center_h.addWidget(act_f, 1)
         
-        self.btn_escanear = QPushButton("⚡ ESCANEAR AHORA")
-        self.btn_escanear.setObjectName("boton_accion")
-        self.btn_escanear.setMinimumHeight(45)
-        layout_lateral.addWidget(self.btn_escanear)
+        layout.addLayout(center_h, 1)
+        self.main_layout.addWidget(content)
+
+    def init_chat_floating(self):
+        # Ventana de Chat Flotante (Abajo Izquierda)
+        self.chat_win = QFrame(self)
+        self.chat_win.setFixedSize(280, 380)
+        self.chat_win.setStyleSheet("background: #1e1e1e; border-radius: 12px; border: 1px solid #3467eb;")
         
-        lbl_version = QLabel("v0.1.0-alpha")
-        lbl_version.setStyleSheet("color: #555555; font-size: 10px; margin: 10px;")
-        lbl_version.setAlignment(Qt.AlignCenter)
-        layout_lateral.addWidget(lbl_version)
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(25); shadow.setColor(QColor(0,0,0,200)); self.chat_win.setGraphicsEffect(shadow)
 
-        self.layout_principal.addWidget(self.barra_lateral)
+        l = QVBoxLayout(self.chat_win)
+        header = QLabel("🤖 Asistente VigiData"); header.setStyleSheet("background: #3467eb; color: white; padding: 10px; font-weight: bold; border-top-left-radius: 10px; border-top-right-radius: 10px;")
+        l.addWidget(header)
 
-    def inicializar_area_contenido(self):
-        widget_contenido = QWidget()
-        layout_v_contenido = QVBoxLayout(widget_contenido)
-        layout_v_contenido.setContentsMargins(30, 20, 30, 30)
-        layout_v_contenido.setSpacing(20)
+        self.chat_display = QScrollArea(); self.chat_display.setWidgetResizable(True); self.chat_display.setStyleSheet("border:none;")
+        self.msg_cont = QWidget(); self.msg_l = QVBoxLayout(self.msg_cont); self.msg_l.addStretch()
+        self.chat_display.setWidget(self.msg_cont)
+        l.addWidget(self.chat_display)
 
-        cabecera = QWidget()
-        layout_cabecera = QHBoxLayout(cabecera)
-        layout_cabecera.setContentsMargins(0, 0, 0, 0)
-        div_titulo = QWidget()
-        layout_div_titulo = QVBoxLayout(div_titulo)
-        layout_div_titulo.setContentsMargins(0,0,0,0)
-        self.lbl_pagina_titulo = QLabel("Panel de Control")
-        self.lbl_pagina_titulo.setStyleSheet("font-size: 26px; font-weight: bold; color: white;")
-        self.lbl_pagina_subtitulo = QLabel("Bienvenido al organizador inteligente optimizado.")
-        self.lbl_pagina_subtitulo.setStyleSheet("color: #888888; font-size: 14px;")
-        layout_div_titulo.addWidget(self.lbl_pagina_titulo)
-        layout_div_titulo.addWidget(self.lbl_pagina_subtitulo)
-        self.btn_estado_servicio = QPushButton("● Servicio Activo")
-        self.btn_estado_servicio.setStyleSheet("background-color: #2d2d30; color: #28a745; border: 1px solid #3e3e42; padding: 8px 15px; border-radius: 15px; font-weight: bold; font-size: 12px;")
-        layout_cabecera.addWidget(div_titulo)
-        layout_cabecera.addStretch()
-        layout_cabecera.addWidget(self.btn_estado_servicio)
-        layout_v_contenido.addWidget(cabecera)
+        self.chat_input = QLineEdit(); self.chat_input.setPlaceholderText("Escribe un comando..."); self.chat_input.setStyleSheet("background: #121212; color: white; padding: 10px; border-radius: 5px; border: 1px solid #333;")
+        self.chat_input.returnPressed.connect(self.hablar)
+        l.addWidget(self.chat_input)
 
-        self.contenedor_metricas = QWidget()
-        self.layout_grid_metricas = QGridLayout(self.contenedor_metricas)
-        self.layout_grid_metricas.setContentsMargins(0, 0, 0, 0)
-        self.layout_grid_metricas.setSpacing(20)
-        self.card_archivos = TarjetaMetrica("ARCHIVOS PROCESADOS", "1,250", "#007acc")
-        self.card_categorias = TarjetaMetrica("CATEGORÍAS IA", "12", "#886ce4")
-        self.card_precision = TarjetaMetrica("PRECISIÓN NLP", "96.4%", "#28a745")
-        self.card_ahorro = TarjetaMetrica("ESPACIO LIBERADO", "14.2 GB", "#ffc107")
-        self.layout_grid_metricas.addWidget(self.card_archivos, 0, 0)
-        self.layout_grid_metricas.addWidget(self.card_categorias, 0, 1)
-        self.layout_grid_metricas.addWidget(self.card_precision, 0, 2)
-        self.layout_grid_metricas.addWidget(self.card_ahorro, 0, 3)
-        layout_v_contenido.addWidget(self.contenedor_metricas)
+    def resizeEvent(self, event):
+        # Mantener el chat abajo a la izquierda del área de contenido
+        self.chat_win.move(250, self.height() - 400)
+        super().resizeEvent(event)
 
-        self.contenedor_inferior = QWidget()
-        self.layout_h_inferior = QHBoxLayout(self.contenedor_inferior)
-        self.layout_h_inferior.setContentsMargins(0, 0, 0, 0)
-        self.layout_h_inferior.setSpacing(20)
-
-        self.panel_visualizacion = QFrame()
-        self.panel_visualizacion.setStyleSheet("background-color: #252526; border-radius: 8px; border: 1px solid #3e3e42;")
-        self.layout_v_vis = QVBoxLayout(self.panel_visualizacion)
-        self.lbl_tit_vis = QLabel("Distribución de Archivos por Categoría")
-        self.lbl_tit_vis.setStyleSheet("font-weight: bold; color: white; padding: 10px; font-size: 14px;")
-        self.mock_grafico = QLabel("MOCKUP DE GRÁFICO TIPO PIE\n(Usa PyQtGraph aquí para producción)")
-        self.mock_grafico.setStyleSheet("border: 2px dashed #3e3e42; color: #555555; margin: 20px;")
-        self.mock_grafico.setAlignment(Qt.AlignCenter)
-        self.layout_v_vis.addWidget(self.lbl_tit_vis)
-        self.layout_v_vis.addWidget(self.mock_grafico, 1)
-
-        self.panel_actividad = QFrame()
-        self.panel_actividad.setMinimumWidth(350)
-        self.panel_actividad.setStyleSheet("background-color: #252526; border-radius: 8px; border: 1px solid #3e3e42;")
-        self.layout_v_act = QVBoxLayout(self.panel_actividad)
-        self.lbl_tit_act = QLabel("Últimas Acciones Inteligentes")
-        self.lbl_tit_act.setStyleSheet("font-weight: bold; color: white; padding: 10px; font-size: 14px;")
-        self.scroll_actividad = QScrollArea()
-        self.scroll_actividad.setWidgetResizable(True)
-        self.scroll_actividad.setStyleSheet("border: none; background: transparent;")
-        self.contenedor_lista = QWidget()
-        self.layout_lista = QVBoxLayout(self.contenedor_lista)
-        self.layout_lista.setSpacing(8)
-        self.añadir_item_actividad("📄 reporte_final.pdf", "Mover -> /Documentos/Informes", "10m ago")
-        self.añadir_item_actividad("📸 img_001.jpg", "Mover -> /Imágenes/Fotos", "15m ago")
-        self.layout_lista.addStretch()
-        self.scroll_actividad.setWidget(self.contenedor_lista)
-        self.layout_v_act.addWidget(self.lbl_tit_act)
-        self.layout_v_act.addWidget(self.scroll_actividad)
-
-        self.layout_h_inferior.addWidget(self.panel_visualizacion, 2)
-        self.layout_h_inferior.addWidget(self.panel_actividad, 1)
-        layout_v_contenido.addWidget(self.contenedor_inferior, 1)
-
-        self.barra_estado = QFrame()
-        self.barra_estado.setFixedHeight(25)
-        self.barra_estado.setStyleSheet("background-color: #007acc; color: white; border-top: 1px solid #3e3e42;")
-        layout_estado = QHBoxLayout(self.barra_estado)
-        layout_estado.setContentsMargins(10, 0, 10, 0)
-        self.lbl_estado_bd = QLabel("Base de Datos: SQLite Conectada")
-        self.lbl_estado_bd.setStyleSheet("color: white; font-size: 11px;")
-        self.lbl_memoria = QLabel("RAM Uso (UI): ~45MB")
-        self.lbl_memoria.setStyleSheet("color: white; font-size: 11px; font-weight: bold;")
-        layout_estado.addWidget(self.lbl_estado_bd)
-        layout_estado.addStretch()
-        layout_estado.addWidget(self.lbl_memoria)
-        layout_v_contenido.addWidget(self.barra_estado)
-
-        self.layout_principal.addWidget(widget_contenido)
-
-    # --- LÓGICA IA (AGREGADA) ---
-    def procesar_ia(self):
-        texto = self.entrada_ia.text().strip()
-        if not texto: return
-        nombre = self.ia.extraer_nombre_especifico(texto)
-        if not nombre:
-            nombre = self.ia.predecir_categoria(texto)
-            tipo = "Categoría Detectada"
-        else:
-            tipo = "Nombre Manual"
-        try:
-            if not os.path.exists(nombre):
-                os.makedirs(nombre)
-                msg = f"Carpeta '{nombre}' creada."
-            else:
-                msg = f"Carpeta '{nombre}' ya existe."
-            self.toast = NotificacionToast(msg, self)
-            self.toast.mostrar(self.mapToGlobal(QSize(250, 500).toPoint()))
-            self.añadir_item_actividad(f"📂 {nombre}", tipo, "Ahora")
-            self.entrada_ia.clear()
-        except Exception as e:
-            print(f"Error: {e}")
-
-    def añadir_item_actividad(self, archivo, accion, tiempo):
-        item = QFrame()
-        item.setStyleSheet("background-color: #1e1e1e; border-radius: 4px; padding: 8px; border: 1px solid #2d2d30;")
-        layout = QHBoxLayout(item)
-        layout.setContentsMargins(5, 2, 5, 2)
-        icono = QLabel("✅")
-        lbl_archivo = QLabel(archivo)
-        lbl_archivo.setStyleSheet("color: white; font-weight: bold; font-size: 12px;")
-        lbl_archivo.setMinimumWidth(100) 
-        lbl_accion = QLabel(accion)
-        lbl_accion.setStyleSheet("color: #aaaaaa; font-size: 11px;")
-        lbl_tiempo = QLabel(tiempo)
-        lbl_tiempo.setStyleSheet("color: #666666; font-size: 11px;")
-        lbl_tiempo.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        layout.addWidget(icono)
-        layout.addWidget(lbl_archivo)
-        layout.addWidget(lbl_accion, 1)
-        layout.addWidget(lbl_tiempo)
-        self.layout_lista.insertWidget(0, item) # Insertar arriba
+    def hablar(self):
+        txt = self.chat_input.text()
+        if not txt: return
+        resp = self.asistente.procesar_mensaje(txt)
+        
+        # Burbujas en el chat
+        self.msg_l.insertWidget(self.msg_l.count()-1, QLabel(f"<b>Tú:</b> {txt}", styleSheet="color: #888; font-size: 11px;"))
+        self.msg_l.insertWidget(self.msg_l.count()-1, QLabel(f"<b>IA:</b> {resp}", styleSheet="color: white; background: #222; padding: 8px; border-radius: 5px;"))
+        
+        # Agregar al historial de la derecha
+        item = QFrame(); item.setStyleSheet("background: #222; margin-bottom: 2px; padding: 5px; border-radius: 4px;")
+        il = QHBoxLayout(item); il.addWidget(QLabel(f"⚙️ {resp}", styleSheet="color: #ccc; font-size: 10px;"))
+        self.act_list.insertWidget(0, item)
+        
+        self.chat_input.clear()
 
 if __name__ == "__main__":
-    from PySide6.QtWidgets import QApplication
     app = QApplication(sys.argv)
-    app.setFont(QFont("Segoe UI", 9)) 
-    ventana = DashboardOrganizador()
-    ventana.show()
+    win = DashboardOrganizador()
+    win.show()
     sys.exit(app.exec())
