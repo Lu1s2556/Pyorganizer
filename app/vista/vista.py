@@ -20,8 +20,10 @@ class TarjetaMetrica(QFrame):
 class DashboardOrganizador(QMainWindow):
     def __init__(self):
         super().__init__()
-        # INSTANCIA DEL CONTROLADOR
         self.asistente = AsistenteVigiData() 
+        
+        # Variable de estado para el chat
+        self.chat_expandido = True 
         
         self.setWindowTitle("PyOrganizer - Panel de Control")
         self.resize(1200, 800)
@@ -104,7 +106,7 @@ class DashboardOrganizador(QMainWindow):
         self.main_layout.addWidget(content)
 
     def init_chat_floating(self):
-        """Inicializa la ventana de chat flotante del asistente"""
+        """Inicializa la ventana de chat con capacidad de minimizar"""
         self.chat_win = QFrame(self)
         self.chat_win.setFixedSize(280, 380)
         self.chat_win.setStyleSheet("background: #1e1e1e; border-radius: 12px; border: 1px solid #eab308;")
@@ -112,38 +114,78 @@ class DashboardOrganizador(QMainWindow):
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(25); shadow.setColor(QColor(0,0,0,200)); self.chat_win.setGraphicsEffect(shadow)
 
-        l = QVBoxLayout(self.chat_win)
-        header = QLabel("🤖 Asistente Pyorganizer"); header.setStyleSheet("background: #eab308; color: white; padding: 10px; font-weight: bold; border-top-left-radius: 10px; border-top-right-radius: 10px;")
-        l.addWidget(header)
+        self.chat_layout = QVBoxLayout(self.chat_win)
+        self.chat_layout.setContentsMargins(0,0,0,0) # Ajuste para que el botón cubra todo el ancho
 
+        # BOTÓN DE CABECERA (Para minimizar/maximizar)
+        self.btn_toggle = QPushButton("🤖 Asistente PyOrganizer")
+        self.btn_toggle.setFixedHeight(40)
+        self.btn_toggle.setStyleSheet("""
+            QPushButton {
+                background: #eab308; 
+                color: white; 
+                font-weight: bold; 
+                border-top-left-radius: 10px; 
+                border-top-right-radius: 10px;
+                border: none;
+            }
+            QPushButton:hover { background: #d4a017; }
+        """)
+        self.btn_toggle.clicked.connect(self.toggle_chat)
+        self.chat_layout.addWidget(self.btn_toggle)
+
+        # CONTENEDOR DE CUERPO (Lo que se oculta)
+        self.chat_body = QWidget()
+        self.body_layout = QVBoxLayout(self.chat_body)
+        
         self.chat_display = QScrollArea(); self.chat_display.setWidgetResizable(True); self.chat_display.setStyleSheet("border:none;")
         self.msg_cont = QWidget(); self.msg_l = QVBoxLayout(self.msg_cont); self.msg_l.addStretch()
         self.chat_display.setWidget(self.msg_cont)
-        l.addWidget(self.chat_display)
+        self.body_layout.addWidget(self.chat_display)
 
         self.chat_input = QLineEdit(); self.chat_input.setPlaceholderText("Escribe un comando..."); self.chat_input.setStyleSheet("background: #121212; color: white; padding: 10px; border-radius: 5px; border: 1px solid #333;")
         self.chat_input.returnPressed.connect(self.enviar_a_controlador)
-        l.addWidget(self.chat_input)
+        self.body_layout.addWidget(self.chat_input)
+
+        self.chat_layout.addWidget(self.chat_body)
+
+    def toggle_chat(self):
+        """Lógica para minimizar y maximizar el chat"""
+        if self.chat_expandido:
+            # Minimizar
+            self.chat_body.hide()
+            self.chat_win.setFixedHeight(40)
+            self.chat_expandido = False
+        else:
+            # Maximizar
+            self.chat_body.show()
+            self.chat_win.setFixedHeight(380)
+            self.chat_expandido = True
+        
+        # Reposicionar después de cambiar el tamaño
+        self.actualizar_posicion_chat()
+
+    def actualizar_posicion_chat(self):
+        """Mantiene el chat en la esquina inferior derecha"""
+        x = self.width() - self.chat_win.width() - 20
+        y = self.height() - self.chat_win.height() - 20
+        self.chat_win.move(x, y)
 
     def resizeEvent(self, event):
-        self.chat_win.move(250, self.height() - 400)
+        self.actualizar_posicion_chat()
         super().resizeEvent(event)
 
     def enviar_a_controlador(self):
-        """Captura la entrada y delega el procesamiento al controlador"""
+        """Mantiene la lógica de envío pero limpia el input"""
         txt = self.chat_input.text()
         if not txt: return
         
-        # Llamada al controlador
         respuesta = self.asistente.procesar_peticion(txt)
         
-        # Actualizar UI con mensajes
         self.msg_l.insertWidget(self.msg_l.count()-1, QLabel(f"<b>Tú:</b> {txt}", styleSheet="color: #888; font-size: 11px;"))
         self.msg_l.insertWidget(self.msg_l.count()-1, QLabel(f"<b>IA:</b> {respuesta}", styleSheet="color: white; background: #222; padding: 8px; border-radius: 5px;"))
         
-        # Agregar al historial lateral
-        item = QFrame(); item.setStyleSheet("background: #222; margin-bottom: 2px; padding: 5px; border-radius: 4px;")
-        il = QHBoxLayout(item); il.addWidget(QLabel(f"⚙️ {respuesta}", styleSheet="color: #ccc; font-size: 10px;"))
-        self.act_list.insertWidget(0, item)
+        # Desplazar al final automáticamente
+        self.chat_display.verticalScrollBar().setValue(self.chat_display.verticalScrollBar().maximum())
         
         self.chat_input.clear()

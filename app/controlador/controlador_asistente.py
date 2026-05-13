@@ -25,6 +25,29 @@ class AsistenteVigiData:
             "descargas": str(Path.home() / "Downloads")
         }
 
+    def mover_por_patron(self, patron, destino_clave):
+        """Busca archivos que contengan el patrón y los mueve al destino."""
+        try:
+            ruta_origen = Path(self.rutas["descargas"])
+            ruta_destino = Path(self.rutas.get(destino_clave, self.rutas["documentos"]))
+            
+            archivos_encontrados = []
+            for archivo in ruta_origen.iterdir():
+                # Si el nombre del archivo contiene el texto indicado por el usuario
+                if archivo.is_file() and patron.lower() in archivo.name.lower():
+                    # Usamos shutil para moverlo
+                    shutil.move(str(archivo), str(ruta_destino / archivo.name))
+                    archivos_encontrados.append(archivo.name)
+            
+            if archivos_encontrados:
+                cantidad = len(archivos_encontrados)
+                return f"✅ He movido {cantidad} archivos con el nombre '{patron}' a {destino_clave}."
+            else:
+                return f"❌ No encontré archivos que contengan '{patron}' en Descargas."
+                
+        except Exception as e:
+            return f"⚠️ Error al mover archivos: {str(e)}"
+
     def procesar_peticion(self, texto):
         texto = (texto or "").strip()
         if not texto:
@@ -53,15 +76,27 @@ class AsistenteVigiData:
         if probabilidad < 0.20:
             return "No estoy seguro de qué quieres. Intenta usar otra frase."
 
+        # --- LÓGICA PARA CREAR ---
         if etiqueta == "crear":
-            # Parsear el texto para extraer ruta y nombre
             match = re.search(r'crea.*carpeta.*(?:en el|en)\s+(\w+).*llamada?\s+(.+)', texto, re.IGNORECASE)
             if match:
                 ruta_base = match.group(1).lower()
                 nombre_carpeta = match.group(2).strip()
                 return self.modelo_org.crear_carpeta(ruta_base, nombre_carpeta)
+            return "❌ No pude entender la ruta o nombre. Ejemplo: 'crea una carpeta en el escritorio llamada Tareas'."
+
+        # --- NUEVA LÓGICA PARA MOVER POR NOMBRE ---
+        if etiqueta == "mover":
+            # Ejemplo: "mueve los archivos de tarea mod 1 a documentos"
+            # Captura lo que está entre "de" y "a" como el nombre, y lo que sigue a "a" como el destino
+            match = re.search(r'mueve.*archivos\s+(?:de|llamados|con nombre)\s+(.+)\s+a\s+(\w+)', texto, re.IGNORECASE)
+            
+            if match:
+                patron_nombre = match.group(1).strip()
+                destino_clave = match.group(2).lower().strip()
+                return self.mover_por_patron(patron_nombre, destino_clave)
             else:
-                return "❌ No pude entender la ruta o nombre de la carpeta. Usa formato: 'crea una carpeta en el escritorio llamada Fotos'."
+                return "❌ No entendí qué mover. Intenta: 'mueve los archivos de tarea mod 1 a documentos'."
 
         respuestas = {
             "crear": "✅ Entendido, voy a crear la carpeta o el recurso que necesitas.",
