@@ -8,15 +8,14 @@ from app.controlador.controlador_asistente import AsistenteVigiData
 
 class TarjetaMetrica(QFrame):
     """Componente para las tarjetas de estadísticas superiores"""
-    def __init__(self, titulo, valor, color, sub, parent=None):
+    def __init__(self, titulo, valor, color, parent=None):
         super().__init__(parent)
         self.setMinimumHeight(120)
         self.setStyleSheet(f"background: #181818; border-radius: 10px; padding: 15px;")
         l = QVBoxLayout(self)
-        t = QLabel(titulo); t.setStyleSheet("color: #aaaaaa; font-size: 11px; font-weight: bold;")
-        v = QLabel(valor); v.setStyleSheet(f"color: {color}; font-size: 32px; font-weight: bold; margin: 5px 0;")
-        s = QLabel(sub); s.setStyleSheet("color: #555555; font-size: 10px;")
-        l.addWidget(t); l.addWidget(v); l.addWidget(s)
+        t = QLabel(titulo); t.setStyleSheet("color: #aaaaaa; font-size: 11px; font-weight: bold;"); t.setAlignment(Qt.AlignCenter)
+        v = QLabel(valor); v.setStyleSheet(f"color: {color}; font-size: 32px; font-weight: bold; margin: 5px 0;"); v.setAlignment(Qt.AlignCenter)
+        l.addWidget(t); l.addWidget(v)
 
 class DashboardOrganizador(QMainWindow):
     def __init__(self):
@@ -52,13 +51,13 @@ class DashboardOrganizador(QMainWindow):
         
         for text in ["Reglas de IA", "Historial"]:
             b = QPushButton(f"  {text}")
-            b.setStyleSheet("color: #888; text-align: left; padding: 12px; border: none;")
+            b.setStyleSheet("QPushButton { background: #121212; color: #white; text-align: left; padding: 12px; border: none; } QPushButton:hover { background: #eab308; color: white; }")
             l.addWidget(b)
         
         l.addStretch()
         
-        btn_scan = QPushButton("⚡ ESCANEAR AHORA")
-        btn_scan.setStyleSheet("background: #28a745; color: white; font-weight: bold; padding: 15px; border-radius: 5px; margin: 10px;")
+        btn_scan = QPushButton("ESCANEAR AHORA")
+        btn_scan.setStyleSheet("QPushButton { background: #121212; color: white; font-weight: bold; padding: 15px; border-radius: 5px; margin: 10px; } QPushButton:hover { background: #22c55e; color: white; }")
         l.addWidget(btn_scan)
         self.main_layout.addWidget(sidebar)
 
@@ -69,17 +68,17 @@ class DashboardOrganizador(QMainWindow):
 
         # Header
         head = QVBoxLayout()
-        tit = QLabel("Panel de Control"); tit.setStyleSheet("color: white; font-size: 26px; font-weight: bold;")
+        tit = QLabel("Panel de Control"); tit.setStyleSheet("color: white; font-size: 26px; font-weight: bold;"); tit.setAlignment(Qt.AlignCenter)
         sub = QLabel(""); sub.setStyleSheet("color: #666; font-size: 14px;")
         head.addWidget(tit); head.addWidget(sub)
         layout.addLayout(head)
 
         # Métricas (Basadas en la interfaz real)
         grid = QGridLayout()
-        grid.addWidget(TarjetaMetrica("ARCHIVOS PROCESADOS", "1,250", "white", "Actualizado"), 0, 0)
-        grid.addWidget(TarjetaMetrica("CATEGORÍAS IA", "12", "#eab308", "Actualizado"), 0, 1)
-        grid.addWidget(TarjetaMetrica("PRECISIÓN NLP", "96.4%", "#22c55e", "Actualizado"), 0, 2)
-        grid.addWidget(TarjetaMetrica("ESPACIO LIBERADO", "14.2 GB", "#eab308", "Actualizado"), 0, 3)
+        grid.addWidget(TarjetaMetrica("ARCHIVOS PROCESADOS", "1,250", "white"), 0, 0)
+        grid.addWidget(TarjetaMetrica("CATEGORÍAS IA", "12", "#eab308"), 0, 1)
+        grid.addWidget(TarjetaMetrica("PRECISIÓN NLP", "96.4%", "#22c55e"), 0, 2)
+        grid.addWidget(TarjetaMetrica("ESPACIO LIBERADO", "14.2 GB", "#eab308"), 0, 3)
         layout.addLayout(grid)
 
         # Área Central
