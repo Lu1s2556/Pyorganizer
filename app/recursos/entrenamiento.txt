@@ -1,0 +1,12 @@
+__label__crear quiero hacer una carpeta nueva
+__label__crear genera un directorio
+__label__borrar elimina este archivo
+__label__borrar borra la carpeta de fotos
+__label__mover guarda este documento en descargas
+__label__mover mueve esta foto a mis imagenes
+__label__crear crea una carpeta nueva llamada tareas
+__label__crear genera un directorio con el nombre fotos en el escritorio
+__label__crear haz una carpeta llamada musica
+__label__borrar elimina la carpeta llamada temporal
+__label__borrar borra el directorio basura del escritorio
+__label__borrar quita la carpeta llamada vieja

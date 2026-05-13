@@ -1,6 +1,0 @@
-__label__crear quiero hacer una carpeta nueva
-__label__crear genera un directorio
-__label__borrar elimina este archivo
-__label__borrar borra la carpeta de fotos
-__label__mover guarda este documento en descargas
-__label__mover mueve esta foto a mis imagenes

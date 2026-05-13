@@ -6,7 +6,8 @@ from pathlib import Path
 class AsistenteVigiData:
     def __init__(self):
         # Cargar el modelo entrenado (asegúrate de haberlo generado antes)
-        # self.modelo = fasttext.load_model('app/recursos/modelo_asistente.bin')
+        
+        self.modelo = fasttext.load_model('app/recursos/modelo_asistente.bin')
         
         self.rutas = {
             "documentos": str(Path.home() / "Documents"),

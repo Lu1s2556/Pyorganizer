@@ -136,7 +136,7 @@ class DashboardOrganizador(QMainWindow):
         if not txt: return
         
         # Llamada al controlador
-        respuesta = self.asistente.procesar_mensaje(txt)
+        respuesta = self.asistente.procesar_peticion(txt)
         
         # Actualizar UI con mensajes
         self.msg_l.insertWidget(self.msg_l.count()-1, QLabel(f"<b>Tú:</b> {txt}", styleSheet="color: #888; font-size: 11px;"))
