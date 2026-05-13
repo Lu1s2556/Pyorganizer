@@ -43,11 +43,11 @@ class DashboardOrganizador(QMainWindow):
         sidebar.setStyleSheet("background-color: #121212; border-right: 1px solid #222;")
         l = QVBoxLayout(sidebar)
         
-        logo = QLabel("📁 VigiData"); logo.setStyleSheet("color: white; font-size: 20px; font-weight: bold; margin: 25px;")
+        logo = QLabel("📁 Pyorganizer"); logo.setStyleSheet("color: white; font-size: 20px; font-weight: bold; margin: 25px;")
         l.addWidget(logo)
 
         btn_active = QPushButton("  Panel Resumen")
-        btn_active.setStyleSheet("background: #3467eb; color: white; text-align: left; padding: 12px; border-radius: 5px; font-weight: bold;")
+        btn_active.setStyleSheet("background: #eab308; color: white; text-align: left; padding: 12px; border-radius: 5px; font-weight: bold;")
         l.addWidget(btn_active)
         
         for text in ["Reglas de IA", "Historial"]:
@@ -70,14 +70,14 @@ class DashboardOrganizador(QMainWindow):
         # Header
         head = QVBoxLayout()
         tit = QLabel("Panel de Control"); tit.setStyleSheet("color: white; font-size: 26px; font-weight: bold;")
-        sub = QLabel("Bienvenido al organizador inteligente optimizado."); sub.setStyleSheet("color: #666; font-size: 14px;")
+        sub = QLabel(""); sub.setStyleSheet("color: #666; font-size: 14px;")
         head.addWidget(tit); head.addWidget(sub)
         layout.addLayout(head)
 
         # Métricas (Basadas en la interfaz real)
         grid = QGridLayout()
         grid.addWidget(TarjetaMetrica("ARCHIVOS PROCESADOS", "1,250", "white", "Actualizado"), 0, 0)
-        grid.addWidget(TarjetaMetrica("CATEGORÍAS IA", "12", "#a855f7", "Actualizado"), 0, 1)
+        grid.addWidget(TarjetaMetrica("CATEGORÍAS IA", "12", "#eab308", "Actualizado"), 0, 1)
         grid.addWidget(TarjetaMetrica("PRECISIÓN NLP", "96.4%", "#22c55e", "Actualizado"), 0, 2)
         grid.addWidget(TarjetaMetrica("ESPACIO LIBERADO", "14.2 GB", "#eab308", "Actualizado"), 0, 3)
         layout.addLayout(grid)
@@ -108,13 +108,13 @@ class DashboardOrganizador(QMainWindow):
         """Inicializa la ventana de chat flotante del asistente"""
         self.chat_win = QFrame(self)
         self.chat_win.setFixedSize(280, 380)
-        self.chat_win.setStyleSheet("background: #1e1e1e; border-radius: 12px; border: 1px solid #3467eb;")
+        self.chat_win.setStyleSheet("background: #1e1e1e; border-radius: 12px; border: 1px solid #eab308;")
         
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(25); shadow.setColor(QColor(0,0,0,200)); self.chat_win.setGraphicsEffect(shadow)
 
         l = QVBoxLayout(self.chat_win)
-        header = QLabel("🤖 Asistente VigiData"); header.setStyleSheet("background: #3467eb; color: white; padding: 10px; font-weight: bold; border-top-left-radius: 10px; border-top-right-radius: 10px;")
+        header = QLabel("🤖 Asistente Pyorganizer"); header.setStyleSheet("background: #eab308; color: white; padding: 10px; font-weight: bold; border-top-left-radius: 10px; border-top-right-radius: 10px;")
         l.addWidget(header)
 
         self.chat_display = QScrollArea(); self.chat_display.setWidgetResizable(True); self.chat_display.setStyleSheet("border:none;")

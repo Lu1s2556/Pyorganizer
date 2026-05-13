@@ -1,20 +1,28 @@
 import fasttext
-import os
+from pathlib import Path
 
-# 1. Asegúrate de que la carpeta de recursos exista
-if not os.path.exists('app/recursos'):
-    os.makedirs('app/recursos')
+proyecto_raiz = Path(__file__).resolve().parent
+recursos_dir = proyecto_raiz / 'app' / 'recursos'
+recursos_dir.mkdir(parents=True, exist_ok=True)
 
-# 2. Ruta de tu archivo de texto (el que tiene las etiquetas __label__)
-ruta_txt = 'app/recursos/entrenamiento.txt'
+ruta_txt = recursos_dir / 'entrenamiento.txt'
 
-if os.path.exists(ruta_txt):
+ruta_modelo = recursos_dir / 'modelo_asistente.bin'
+
+if ruta_txt.exists():
     print("Entrenando el modelo de PyOrganizer...")
     # Entrenamos el modelo (puedes ajustar el epoch para más precisión)
-    model = fasttext.train_supervised(input=ruta_txt, epoch=100, lr=0.5)
-    
-    # 3. Guardamos el archivo .bin
-    model.save_model('app/recursos/modelo_asistente.bin')
-    print("✅ ¡Éxito! El archivo 'modelo_asistente.bin' ha sido creado en app/recursos/")
+    try:
+        model = fasttext.train_supervised(
+            input=str(ruta_txt),
+            epoch=50,
+            lr=0.5,
+            wordNgrams=2,
+            verbose=2
+        )
+        model.save_model(str(ruta_modelo))
+        print(f"✅ ¡Éxito! El archivo '{ruta_modelo.name}' ha sido creado en {recursos_dir}")
+    except Exception as e:
+        print(f"❌ Error al entrenar el modelo: {e}")
 else:
     print(f"❌ Error: No encontré el archivo {ruta_txt}. Créalo primero con tus frases de ejemplo.")
