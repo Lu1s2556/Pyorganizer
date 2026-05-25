@@ -7,9 +7,11 @@ from app.modelo.modelo import ModeloOrganizador
 
 class AsistenteVigiData:
     def __init__(self):
-        # Cargar el modelo entrenado (asegúrate de haberlo generado antes)
+         # Cargar el modelo entrenado
         self.modelo = None
+        # Ubicación dinámica del modelo binario de FastText
         ruta_modelo = Path(__file__).resolve().parent.parent / 'recursos' / 'modelo_asistente.bin'
+        
         if ruta_modelo.exists():
             try:
                 self.modelo = fasttext.load_model(str(ruta_modelo))
@@ -18,108 +20,182 @@ class AsistenteVigiData:
 
         self.modelo_org = ModeloOrganizador()
 
-        self.rutas = {
+        # =========================================================================
+        # PARTE 1: MAPA DE RUTAS INSTINTIVAS (ATAJOS)
+        # =========================================================================
+        # Traducción de alias cotidianos a rutas físicas del dispositivo
+        self.rutas_atajo = {
+            "escritorio": str(Path.home() / "Desktop"),
             "documentos": str(Path.home() / "Documents"),
+            "descargas": str(Path.home() / "Downloads"),
             "fotos": str(Path.home() / "Pictures"),
             "videos": str(Path.home() / "Videos"),
-            "descargas": str(Path.home() / "Downloads")
+            
+            # Atajos personalizados pensados para el usuario final
+            "mi pendrive": self._buscar_unidad_extraible(),
+            "mis proyectos": str(Path.home() / "Documents" / "GitHub" / "Pyorganizer"),
+            "universidad": str(Path.home() / "Documents" / "UNELLEZ"),
+            "respaldos": "D:\\Respaldos" if os.path.exists("D:\\") else str(Path.home() / "Documents" / "Respaldos")
         }
 
-    def mover_por_patron(self, patron, destino_clave):
-        """Busca archivos que contengan el patrón y los mueve al destino."""
-        try:
-            ruta_origen = Path(self.rutas["descargas"])
-            ruta_destino = Path(self.rutas.get(destino_clave, self.rutas["documentos"]))
-            
-            archivos_encontrados = []
-            for archivo in ruta_origen.iterdir():
-                # Si el nombre del archivo contiene el texto indicado por el usuario
-                if archivo.is_file() and patron.lower() in archivo.name.lower():
-                    # Usamos shutil para moverlo
-                    shutil.move(str(archivo), str(ruta_destino / archivo.name))
-                    archivos_encontrados.append(archivo.name)
-            
-            if archivos_encontrados:
-                cantidad = len(archivos_encontrados)
-                return f"✅ He movido {cantidad} archivos con el nombre '{patron}' a {destino_clave}."
-            else:
-                return f"❌ No encontré archivos que contengan '{patron}' en Descargas."
-                
-        except Exception as e:
-            return f"⚠️ Error al mover archivos: {str(e)}"
+    def _buscar_unidad_extraible(self):
+        """Detecta de forma dinámica si hay un almacenamiento USB conectado al equipo"""
+        for letra in ["D", "E", "F", "G", "H"]:
+            ruta_unidad = f"{letra}:\\"
+            if os.path.exists(ruta_unidad):
+                return ruta_unidad
+        # Fallback de seguridad si no hay pendrive introducido
+        return str(Path.home() / "Desktop")
 
     def procesar_peticion(self, texto):
+        """Recibe el texto de la Vista, predice la intención y ejecuta la acción"""
         texto = (texto or "").strip()
         if not texto:
-            return "Escribe un texto para que pueda ayudarte."
+            return "Escribe un comando para ayudarte."
 
         if self.modelo is None:
-            return "No tengo un modelo cargado. Ejecuta entrenar_ia.py para generar app/recursos/modelo_asistente.bin."
+            return "⚠️ IA Desconectada. Primero ejecuta 'python entrenar_ia.py' para generar el cerebro."
 
         try:
             etiquetas, probabilidades = self.modelo.predict(texto, k=1)
-            etiquetas = [e.decode() if isinstance(e, bytes) else str(e) for e in etiquetas]
-            probabilidades = [float(p) for p in probabilidades]
+            etiqueta = etiquetas[0].replace("__label__", "")
+            probabilidad = probabilidades[0]
         except Exception as e:
-            return f"⚠️ Error al procesar la petición: {str(e)}"
+            return f"⚠️ Error al analizar texto: {str(e)}"
 
-        if not etiquetas:
-            return "No pude identificar la intención de tu mensaje."
-
-        etiqueta = etiquetas[0].replace("__label__", "")
-        probabilidad = probabilidades[0] if probabilidades else 0.0
-
-        return self._formatear_respuesta(etiqueta, probabilidad, texto)
-
-    def _formatear_respuesta(self, etiqueta, probabilidad, texto):
-        """Convierte la etiqueta FastText en una respuesta para la UI."""
         if probabilidad < 0.20:
-            return "No estoy seguro de qué quieres. Intenta usar otra frase."
+            return "🤔 No entiendo bien tu instrucción. Intenta estructurarla de forma más sencilla."
 
-        # --- LÓGICA PARA CREAR ---
+        # =========================================================================
+        # PARTE 2: FILTRADO DE INTENCIONES CON REGEX E IDIOMA NATURAL
+        # =========================================================================
+        
+        # ACCIÓN A: CREAR CARPETA UTILIZANDO ALIAS
         if etiqueta == "crear":
-            match = re.search(r'crea.*carpeta.*(?:en el|en)\s+(\w+).*llamada?\s+(.+)', texto, re.IGNORECASE)
+            # Sintaxis intuitiva: "crea una carpeta llamada [nombre] en [alias]"
+            match = re.search(r'crea.*carpeta.*(?:llamada|llamado)\s+([\w\d_-]+)\s+(?:en|en el|en la)\s+(.+)', texto, re.IGNORECASE)
             if match:
-                ruta_base = match.group(1).lower()
-                nombre_carpeta = match.group(2).strip()
-                return self.modelo_org.crear_carpeta(ruta_base, nombre_carpeta)
-            return "❌ No pude entender la ruta o nombre. Ejemplo: 'crea una carpeta en el escritorio llamada Tareas'."
+                nombre_carpeta = match.group(1).strip()
+                destino_alias = match.group(2).strip().lower()
+                
+                # Resuelve el alias a una ruta real o usa el Escritorio por defecto
+                ruta_padre = self.rutas_atajo.get(destino_alias, self.rutas_atajo["escritorio"])
+                return self.crear_carpeta_intuitiva(ruta_padre, nombre_carpeta)
+                
+            return "❌ Formato de creación no reconocido. Intenta: 'crea una carpeta llamada unellez en documentos'."
 
-        # --- NUEVA LÓGICA PARA MOVER POR NOMBRE ---
+        # ACCIÓN B: MOVER ARCHIVOS (Soporta indicar la ubicación exacta de la carpeta)
         if etiqueta == "mover":
-            # Ejemplo: "mueve los archivos de tarea mod 1 a documentos"
-            # Captura lo que está entre "de" y "a" como el nombre, y lo que sigue a "a" como el destino
-            match = re.search(r'mueve.*archivos\s+(?:de|llamados|con nombre)\s+(.+)\s+a\s+(\w+)', texto, re.IGNORECASE)
+            # 1. Intentar buscar formato complejo: "mueve X a la carpeta Y en Z"
+            # Ejemplo: "mueve el archivo tarea a la carpeta unellez en el escritorio"
+            match_complejo = re.search(r'mueve\s+(?:los archivos de|el archivo|todos los|la carpeta)?\s*(.+?)\s+a\s+(?:la carpeta\s+)?(.+?)\s+(?:en\s+el\s+|en\s+la\s+|en\s+)(.+)', texto, re.IGNORECASE)
             
-            if match:
-                patron_nombre = match.group(1).strip()
-                destino_clave = match.group(2).lower().strip()
-                return self.mover_por_patron(patron_nombre, destino_clave)
+            if match_complejo:
+                elemento_origen = match_complejo.group(1).strip().lower()
+                destino_carpeta = match_complejo.group(2).strip() # Nombre real de la carpeta (ej: unellez)
+                ubicacion_padre = match_complejo.group(3).strip().lower() # Lugar (ej: escritorio)
+                
+                # Resolver la ubicación del padre (ej: Escritorio, Documentos) o usar Escritorio por defecto
+                ruta_padre = self.rutas_atajo.get(ubicacion_padre, self.rutas_atajo["escritorio"])
+                ruta_destino = str(Path(ruta_padre) / destino_carpeta)
+                
             else:
-                return "❌ No entendí qué mover. Intenta: 'mueve los archivos de tarea mod 1 a documentos'."
+                # 2. Si no especifica ubicación ("en el X"), usar la lógica simple anterior
+                # Ejemplo: "mueve pdf a universidad" o "mueve tarea a unellez"
+                match_simple = re.search(r'mueve\s+(?:los archivos de|el archivo|todos los|la carpeta)?\s*(.+?)\s+a\s+(?:la carpeta\s+)?(.+)', texto, re.IGNORECASE)
+                
+                if match_simple:
+                    elemento_origen = match_simple.group(1).strip().lower()
+                    destino_peticion = match_simple.group(2).strip()
+                    destino_clave = destino_peticion.lower()
+                    
+                    # Verificaciones dinámicas por defecto
+                    if destino_clave in self.rutas_atajo:
+                        ruta_destino = self.rutas_atajo[destino_clave]
+                    else:
+                        posible_carpeta_escritorio = Path(self.rutas_atajo["escritorio"]) / destino_peticion
+                        posible_carpeta_documentos = Path(self.rutas_atajo["documentos"]) / destino_peticion
+                        
+                        if posible_carpeta_escritorio.exists() and posible_carpeta_escritorio.is_dir():
+                            ruta_destino = str(posible_carpeta_escritorio)
+                        elif posible_carpeta_documentos.exists() and posible_carpeta_documentos.is_dir():
+                            ruta_destino = str(posible_carpeta_documentos)
+                        else:
+                            ruta_destino = str(posible_carpeta_escritorio)
+                else:
+                    return "❌ No logré descifrar qué mover o a dónde ir. Intenta: 'mueve tarea a unellez en el escritorio'."
 
-        respuestas = {
-            "crear": "✅ Entendido, voy a crear la carpeta o el recurso que necesitas.",
-            "mover": "✅ Voy a mover el elemento al destino indicado.",
-            "borrar": "✅ Voy a eliminar lo que has pedido.",
-            "documentos": "Puedo ayudarte a manejar documentos.",
-            "imagenes": "Puedo ayudarte a organizar imágenes.",
-            "videos": "Puedo ayudarte a organizar tus videos.",
-            "codigo": "Puedo ayudarte con archivos de código.",
-        }
+            # Ejecutar el movimiento inteligente con la ruta resuelta
+            return self.ejecutar_movimiento_inteligente(elemento_origen, ruta_destino)
 
-        if etiqueta in respuestas:
-            return respuestas[etiqueta]
+        return f"Intención detectada: '{etiqueta}' con {probabilidad*100:.1f}% de confianza, pero sin ejecutor."
 
-        return f"Detecté la intención '{etiqueta}' con {probabilidad:.2f} de confianza."
-
-    def guardar_elemento(self, ruta_origen, tipo_destino):
-        """Mueve un archivo a la carpeta correspondiente (Fotos, Videos, etc.)"""
+    def crear_carpeta_intuitiva(self, ruta_padre, nombre_carpeta):
+        """Crea físicamente un directorio utilizando las rutas simplificadas"""
         try:
-            destino = self.rutas.get(tipo_destino)
-            if destino and os.path.exists(ruta_origen):
-                shutil.move(ruta_origen, destino)
-                return f"✅ Archivo movido a {tipo_destino}"
-            return "❌ No se encontró el destino o el archivo origen."
+            ruta_final = Path(ruta_padre) / nombre_carpeta
+            ruta_final.mkdir(parents=True, exist_ok=True)
+            return f"✅ Carpeta '{nombre_carpeta}' creada con éxito en '{Path(ruta_padre).name}'."
         except Exception as e:
-            return f"⚠️ Error: {str(e)}"
+            return f"❌ Error al crear la carpeta: {str(e)}"
+
+    def ejecutar_movimiento_inteligente(self, origen, ruta_destino):
+        """
+        Analiza dinámicamente si el origen solicitado corresponde a una extensión pura,
+        a un archivo único específico o a un grupo de archivos con el mismo patrón de nombre.
+        """
+        try:
+            destino_dir = Path(ruta_destino)
+            destino_dir.mkdir(parents=True, exist_ok=True) # Crea la carpeta destino (y padres) si no existe
+
+            # Zonas de rastreo inicial (Descargas y Escritorio son las más comunes)
+            carpetas_busqueda = [Path(self.rutas_atajo["descargas"]), Path(self.rutas_atajo["escritorio"])]
+            archivos_movidos = []
+
+            # Validar si el usuario introdujo únicamente una extensión de formato
+            formatos_validos = ["pdf", "docx", "png", "jpg", "txt", "xlsx", "pptx", "zip", "rar"]
+            es_extension_pura = origen in formatos_validos
+            
+            for carpeta in carpetas_busqueda:
+                if not carpeta.exists():
+                    continue
+                    
+                for item in carpeta.iterdir():
+                    if item.is_file():
+                        debe_moverse = False
+                        
+                        # Escenario A: Filtrado global por tipo de extensión (Ej: "mueve pdf a unellez en el escritorio")
+                        if es_extension_pura and item.suffix.lower() == f".{origen}":
+                            debe_moverse = True
+                            
+                        # Escenario B: Coincidencia de nombre (Mueve todo lo que contenga la frase, ej: "tarea")
+                        elif not es_extension_pura and origen in item.name.lower():
+                            debe_moverse = True
+                        
+                        # Ejecución física del traslado y almacenamiento en BD
+                        if debe_moverse:
+                            ruta_final = destino_dir / item.name
+                            tamano_archivo = item.stat().st_size
+                            
+                            shutil.move(str(item), str(ruta_final))
+                            
+                            # Registro histórico para cumplir las especificaciones del MVC
+                            self.modelo_org.registrar_accion(
+                                nombre=item.name,
+                                tipo=item.suffix,
+                                origen=str(carpeta),
+                                destino=str(destino_dir),
+                                tamano_bytes=tamano_archivo
+                            )
+                            archivos_movidos.append(item.name)
+
+            # Respuesta conversacional limpia para el chat de VigiData
+            if archivos_movidos:
+                if len(archivos_movidos) == 1:
+                    return f"✅ He movido el archivo '{archivos_movidos[0]}' a su destino."
+                return f"📁 ¡Éxito! Movidos {len(archivos_movidos)} archivos ('{origen}') hacia la ubicación asignada."
+                
+            return f"🔍 No localicé ningún archivo que coincida con '{origen}' en Descargas o Escritorio."
+        
+        except Exception as e:
+            return f"❌ Error en la transferencia: {str(e)}"

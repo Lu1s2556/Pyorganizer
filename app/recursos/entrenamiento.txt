@@ -1,77 +1,88 @@
-__label__crear crea una carpeta en el escritorio llamada Fotos  
-__label__crear crea una nueva carpeta en el escritorio llamada Proyecto  
-__label__crear genera un directorio en el escritorio para tareas  
-__label__crear crea una carpeta en el escritorio llamada DocumentosTrabajo  
-__label__crear crea una carpeta nueva en el escritorio llamada Música  
-__label__crear haz una carpeta en el escritorio llamada Personal  
-__label__crear crea un directorio en el escritorio llamado Ideas  
-__label__crear genera una carpeta en el escritorio para Clientes  
-__label__crear crea una carpeta en el escritorio llamada FotosFamilia  
-__label__crear crea una carpeta nueva en el escritorio llamada Recibos  
-__label__crear crea una carpeta en el escritorio llamada Bocetos  
-__label__crear crea una carpeta en el escritorio llamada Planes  
+__label__crear crea una carpeta en el escritorio llamada Fotos
+__label__crear crea una nueva carpeta en el escritorio llamada Proyecto
+__label__crear genera un directorio en el escritorio para tareas
+__label__crear crea una carpeta en el escritorio llamada DocumentosTrabajo
+__label__crear crea una carpeta nueva en el escritorio llamada Música
+__label__crear haz una carpeta en el escritorio llamada Personal
+__label__crear crea un directorio en el escritorio llamado Ideas
+__label__crear genera una carpeta en el escritorio para Clientes
+__label__crear crea una carpeta en el escritorio llamada FotosFamilia
+__label__crear crea una carpeta nueva en el escritorio llamada Recibos
+__label__crear crea una carpeta en el escritorio llamada Bocetos
+__label__crear crea una carpeta en el escritorio llamada Planes
+__label__crear crea una carpeta en Documentos llamada Trabajo
+__label__crear crea una carpeta en Documentos llamada Facturas
+__label__crear genera un directorio en Documentos llamado Proyectos
+__label__crear crea una carpeta en Documentos llamada Contratos
+__label__crear crea una carpeta nueva en Documentos llamada Cursos
+__label__crear haz una carpeta en Documentos llamada ArchivosPersonales
+__label__crear crea un directorio en Documentos llamado Material
+__label__crear genera una carpeta en Documentos llamada Recursos
+__label__crear crea una carpeta en Documentos llamada Tareas
+__label__crear crea una carpeta nueva en Documentos llamada DocumentosImportantes
+__label__crear crea una carpeta en Documentos llamada Ideas
+__label__crear crea una carpeta en Documentos llamada Copias
+__label__crear crea una carpeta llamada unellez en documentos
+__label__crear genera una carpeta llamada tesis en universidad
+__label__crear haz un directorio llamado codigo en mis proyectos
+__label__crear crea una carpeta llamada respaldo en mi pendrive
 
-__label__crear crea una carpeta en Documentos llamada Trabajo  
-__label__crear crea una carpeta en Documentos llamada Facturas  
-__label__crear genera un directorio en Documentos llamado Proyectos  
-__label__crear crea una carpeta en Documentos llamada Contratos  
-__label__crear crea una carpeta nueva en Documentos llamada Cursos  
-__label__crear haz una carpeta en Documentos llamada ArchivosPersonales  
-__label__crear crea un directorio en Documentos llamado Material  
-__label__crear genera una carpeta en Documentos llamada Recursos  
-__label__crear crea una carpeta en Documentos llamada Tareas  
-__label__crear crea una carpeta nueva en Documentos llamada DocumentosImportantes  
-__label__crear crea una carpeta en Documentos llamada Ideas  
-__label__crear crea una carpeta en Documentos llamada Copias  
+__label__mover mueve la carpeta Fotos del escritorio a Documentos
+__label__mover mueve la carpeta Proyecto del escritorio a Documentos
+__label__mover mueve el directorio de escritorio llamado Tareas a Documentos
+__label__mover mueve la carpeta DocumentosTrabajo del escritorio a la carpeta Documentos
+__label__mover mueve la carpeta Música del escritorio a Documentos
+__label__mover mueve la carpeta Personal del escritorio a Documentos
+__label__mover mueve la carpeta Ideas del escritorio a Documentos
+__label__mover mueve la carpeta Clientes del escritorio a Documentos
+__label__mover mueve la carpeta FotosFamilia del escritorio a Documentos
+__label__mover mueve la carpeta Recibos del escritorio a Documentos
+__label__mover mueve el directorio Bocetos del escritorio a Documentos
+__label__mover mueve la carpeta Trabajo de Documentos al escritorio
+__label__mover mueve la carpeta Facturas de Documentos al escritorio
+__label__mover mueve el directorio Proyectos de Documentos al escritorio
+__label__mover mueve la carpeta Contratos de Documentos al escritorio
+__label__mover mueve la carpeta Cursos de Documentos al escritorio
+__label__mover mueve la carpeta ArchivosPersonales de Documentos al escritorio
+__label__mover mueve la carpeta Material de Documentos al escritorio
+__label__mover mueve la carpeta Recursos de Documentos al escritorio
+__label__mover mueve la carpeta Tareas de Documentos al escritorio
+__label__mover mueve la carpeta DocumentosImportantes de Documentos al escritorio
+__label__mover mueve la carpeta Ideas de Documentos al escritorio
+__label__mover mueve la carpeta Copias de Documentos al escritorio
+__label__mover mueve los archivos de tarea mod 1 a documentos
+__label__mover mover todos los archivos con nombre examen algebra a descargas
+__label__mover traspasa los archivos de proyecto final a documentos
+__label__mover mueve los archivos de guia de estudio a documentos
+__label__mover mueve tarea mod 1 a universidad
+__label__mover mueve todos los archivos de programacion a mis proyectos
+__label__mover mueve el archivo evaluacion.pdf a mi pendrive
+__label__mover mueve pdf a universidad
+__label__mover mueve todos los docx a mis proyectos
+__label__mover mueve png a fotos
+__label__mover traspasa los archivos txt a respaldos
 
-__label__mover mueve la carpeta Fotos del escritorio a Documentos  
-__label__mover mueve la carpeta Proyecto del escritorio a Documentos  
-__label__mover mueve el directorio de escritorio llamado Tareas a Documentos  
-__label__mover mueve la carpeta DocumentosTrabajo del escritorio a la carpeta Documentos  
-__label__mover mueve la carpeta Música del escritorio a Documentos  
-__label__mover mueve la carpeta Personal del escritorio a Documentos  
-__label__mover mueve la carpeta Ideas del escritorio a Documentos  
-__label__mover mueve la carpeta Clientes del escritorio a Documentos  
-__label__mover mueve la carpeta FotosFamilia del escritorio a Documentos  
-__label__mover mueve la carpeta Recibos del escritorio a Documentos  
-__label__mover mueve el directorio Bocetos del escritorio a Documentos  
-__label__mover mueve la carpeta Planes del escritorio a Documentos  
-
-__label__mover mueve la carpeta Trabajo de Documentos al escritorio  
-__label__mover mueve la carpeta Facturas de Documentos al escritorio  
-__label__mover mueve el directorio Proyectos de Documentos al escritorio  
-__label__mover mueve la carpeta Contratos de Documentos al escritorio  
-__label__mover mueve la carpeta Cursos de Documentos al escritorio  
-__label__mover mueve la carpeta ArchivosPersonales de Documentos al escritorio  
-__label__mover mueve la carpeta Material de Documentos al escritorio  
-__label__mover mueve la carpeta Recursos de Documentos al escritorio  
-__label__mover mueve la carpeta Tareas de Documentos al escritorio  
-__label__mover mueve la carpeta DocumentosImportantes de Documentos al escritorio  
-__label__mover mueve la carpeta Ideas de Documentos al escritorio  
-__label__mover mueve la carpeta Copias de Documentos al escritorio  
-
-__label__borrar elimina la carpeta Temporal del escritorio  
-__label__borrar borra la carpeta Vieja del escritorio  
-__label__borrar elimina el directorio basura del escritorio  
-__label__borrar borra la carpeta Anuncios del escritorio  
-__label__borrar elimina la carpeta Prueba del escritorio  
-__label__borrar borra la carpeta Antigua del escritorio  
-__label__borrar elimina el directorio Copias del escritorio  
-__label__borrar borra la carpeta Respaldo del escritorio  
-__label__borrar elimina la carpeta Descargas del escritorio  
-__label__borrar borra la carpeta SinUso del escritorio  
-__label__borrar elimina la carpeta ProyectoViejo del escritorio  
-__label__borrar borra la carpeta DocumentosOld del escritorio  
-
-__label__borrar elimina la carpeta Vieja de Documentos  
-__label__borrar borra la carpeta Antigua de Documentos  
-__label__borrar elimina el directorio basura de Documentos  
-__label__borrar borra la carpeta Prueba de Documentos  
-__label__borrar elimina la carpeta Temporal de Documentos  
-__label__borrar borra la carpeta Vieja de Documentos  
-__label__borrar elimina la carpeta Copias de Documentos  
-__label__borrar borra la carpeta Respaldo de Documentos  
-__label__borrar elimina la carpeta Descargas de Documentos  
-__label__borrar borra la carpeta SinUso de Documentos  
-__label__borrar elimina la carpeta ProyectoViejo de Documentos  
+__label__borrar elimina la carpeta Temporal del escritorio
+__label__borrar borra la carpeta Vieja del escritorio
+__label__borrar elimina el directorio basura del escritorio
+__label__borrar borra la carpeta Anuncios del escritorio
+__label__borrar elimina la carpeta Prueba del escritorio
+__label__borrar borra la carpeta Antigua del escritorio
+__label__borrar elimina el directorio Copias del escritorio
+__label__borrar borra la carpeta Respaldo del escritorio
+__label__borrar elimina la carpeta Descargas del escritorio
+__label__borrar borra la carpeta SinUso del escritorio
+__label__borrar elimina la carpeta ProyectoViejo del escritorio
+__label__borrar borra la carpeta DocumentosOld del escritorio
+__label__borrar elimina la carpeta Vieja de Documentos
+__label__borrar borra la carpeta Antigua de Documentos
+__label__borrar elimina el directorio basura de Documentos
+__label__borrar borra la carpeta Prueba de Documentos
+__label__borrar elimina la carpeta Temporal de Documentos
+__label__borrar borra la carpeta Vieja de Documentos
+__label__borrar elimina la carpeta Copias de Documentos
+__label__borrar borra la carpeta Respaldo de Documentos
+__label__borrar elimina la carpeta Descargas de Documentos
+__label__borrar borra la carpeta SinUso de Documentos
+__label__borrar elimina la carpeta ProyectoViejo de Documentos
 __label__borrar borra la carpeta DocumentosOld de Documentos
