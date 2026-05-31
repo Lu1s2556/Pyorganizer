@@ -2,6 +2,7 @@ import os
 import sqlite3
 from pathlib import Path
 from datetime import datetime
+from app.modelo.base_de_datos import GestorBaseDeDatos, inicializar_base_de_datos
 
 class ModeloOrganizador:
     def __init__(self):
