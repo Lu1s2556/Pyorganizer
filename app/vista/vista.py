@@ -1,10 +1,14 @@
 import sys
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-                             QLabel, QPushButton, QFrame, QGridLayout, 
-                             QScrollArea, QLineEdit, QApplication, QGraphicsDropShadowEffect)
+                               QLabel, QPushButton, QFrame, QGridLayout, 
+                               QScrollArea, QLineEdit, QApplication, QGraphicsDropShadowEffect,
+                               QStackedWidget)
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QColor
+
+# Importamos el controlador y la nueva interfaz de reglas del mismo directorio
 from app.controlador.controlador_asistente import AsistenteVigiData
+from app.vista.vista_reglas import VistaReglasOrganizacion
 
 class TarjetaMetrica(QFrame):
     """Componente para las tarjetas de estadísticas superiores"""
@@ -22,7 +26,7 @@ class DashboardOrganizador(QMainWindow):
         super().__init__()
         self.asistente = AsistenteVigiData() 
         
-        # Variable de estado para el chat
+        # Variable de estado para el chat flotante
         self.chat_expandido = True 
         
         self.setWindowTitle("PyOrganizer - Panel de Control")
@@ -35,11 +39,15 @@ class DashboardOrganizador(QMainWindow):
         self.main_layout.setContentsMargins(0,0,0,0)
         self.main_layout.setSpacing(0)
 
+        # Contenedor Multi-vista para alternar los paneles derechos sin abrir ventanas
+        self.content_stack = QStackedWidget()
+
         self.init_sidebar()
-        self.init_content()
+        self.init_content_views() # Inicializa y asocia las sub-vistas al stack
         self.init_chat_floating()
 
     def init_sidebar(self):
+        """Barra lateral izquierda con tu diseño y estilos originales"""
         sidebar = QFrame(); sidebar.setFixedWidth(240)
         sidebar.setStyleSheet("background-color: #121212; border-right: 1px solid #222;")
         l = QVBoxLayout(sidebar)
@@ -47,14 +55,22 @@ class DashboardOrganizador(QMainWindow):
         logo = QLabel("📁 Pyorganizer"); logo.setStyleSheet("color: white; font-size: 20px; font-weight: bold; margin: 25px;")
         l.addWidget(logo)
 
-        btn_active = QPushButton("  Panel Resumen")
-        btn_active.setStyleSheet("background: #eab308; color: white; text-align: left; padding: 12px; border-radius: 5px; font-weight: bold;")
-        l.addWidget(btn_active)
+        # Botón Panel Resumen (Activo por defecto)
+        self.btn_resumen = QPushButton("  Panel Resumen")
+        self.btn_resumen.setStyleSheet("background: #eab308; color: white; text-align: left; padding: 12px; border-radius: 5px; font-weight: bold;")
+        self.btn_resumen.clicked.connect(lambda: self.cambiar_vista(0, self.btn_resumen))
+        l.addWidget(self.btn_resumen)
         
-        for text in ["Reglas de IA", "Historial"]:
-            b = QPushButton(f"  {text}")
-            b.setStyleSheet("QPushButton { background: #121212; color: #white; text-align: left; padding: 12px; border: none; } QPushButton:hover { background: #eab308; color: white; }")
-            l.addWidget(b)
+        # Botón Reglas de IA (Redirige a la nueva UI de reglas_organizacion)
+        self.btn_reglas = QPushButton("  Reglas de IA")
+        self.btn_reglas.setStyleSheet("QPushButton { background: #121212; color: white; text-align: left; padding: 12px; border: none; } QPushButton:hover { background: #eab308; color: white; }")
+        self.btn_reglas.clicked.connect(lambda: self.cambiar_vista(1, self.btn_reglas))
+        l.addWidget(self.btn_reglas)
+
+        # Botón Historial
+        self.btn_historial = QPushButton("  Historial")
+        self.btn_historial.setStyleSheet("QPushButton { background: #121212; color: white; text-align: left; padding: 12px; border: none; } QPushButton:hover { background: #eab308; color: white; }")
+        l.addWidget(self.btn_historial)
         
         l.addStretch()
         
@@ -63,19 +79,50 @@ class DashboardOrganizador(QMainWindow):
         l.addWidget(btn_scan)
         self.main_layout.addWidget(sidebar)
 
-    def init_content(self):
+    def init_content_views(self):
+        """Asigna y empaqueta las secciones dentro del QStackedWidget derecho"""
+        # PANTALLA 0: Tu vista original del Dashboard de antes
+        self.vista_dashboard = self.crear_panel_resumen_original()
+        
+        # PANTALLA 1: La nueva UI de reglas_organizacion (Cargada desde el otro archivo)
+        self.vista_reglas_ia = VistaReglasOrganizacion(
+            asistente=self.asistente, 
+            callback_regresar=lambda: self.cambiar_vista(0, self.btn_resumen)
+        )
+
+        # Agregamos los componentes al mazo secuencial
+        self.content_stack.addWidget(self.vista_dashboard) # Índice 0
+        self.content_stack.addWidget(self.vista_reglas_ia) # Índice 1
+
+        self.main_layout.addWidget(self.content_stack)
+
+    def cambiar_vista(self, indice, boton_activo):
+        """Efectúa la transición de la pantalla y actualiza el botón seleccionado en la barra lateral"""
+        self.content_stack.setCurrentIndex(indice)
+        
+        # Estilos base para simular la selección nativa de tu diseño
+        estilo_base = "QPushButton { background: #121212; color: white; text-align: left; padding: 12px; border: none; } QPushButton:hover { background: #eab308; color: white; }"
+        estilo_activo = "background: #eab308; color: white; text-align: left; padding: 12px; border-radius: 5px; font-weight: bold;"
+        
+        self.btn_resumen.setStyleSheet(estilo_base)
+        self.btn_reglas.setStyleSheet(estilo_base)
+        
+        boton_activo.setStyleSheet(estilo_activo)
+
+    def crear_panel_resumen_original(self):
+        """Estructura e interfaz del Panel de Control original (Métricas, Gráfico e Historial)"""
         content = QWidget()
         layout = QVBoxLayout(content)
         layout.setContentsMargins(30, 30, 30, 30)
 
         # Header
         head = QVBoxLayout()
-        tit = QLabel("Panel de Control"); tit.setStyleSheet("color: white; font-size: 26px; font-weight: bold;"); tit.setAlignment(Qt.AlignCenter)
+        tit = QLabel("Panel de Control"); tit.setStyleSheet("color: white; font-size: 26px; font-weight: bold;")
         sub = QLabel(""); sub.setStyleSheet("color: #666; font-size: 14px;")
         head.addWidget(tit); head.addWidget(sub)
         layout.addLayout(head)
 
-        # Métricas (Basadas en la interfaz real)
+        # Métricas
         grid = QGridLayout()
         grid.addWidget(TarjetaMetrica("ARCHIVOS PROCESADOS", "1,250", "white"), 0, 0)
         grid.addWidget(TarjetaMetrica("CATEGORÍAS IA", "12", "#eab308"), 0, 1)
@@ -83,8 +130,10 @@ class DashboardOrganizador(QMainWindow):
         grid.addWidget(TarjetaMetrica("ESPACIO LIBERADO", "14.2 GB", "#eab308"), 0, 3)
         layout.addLayout(grid)
 
-        # Área Central
+        # Área Central (Gráfico e Historial)
         center_h = QHBoxLayout()
+        
+        # Gráfico
         chart_f = QFrame(); chart_f.setStyleSheet("background: #181818; border-radius: 10px; border: 1px solid #222;")
         chart_l = QVBoxLayout(chart_f)
         chart_l.addWidget(QLabel("Distribución de Archivos por Categoría", styleSheet="color:white; font-weight:bold;"))
@@ -92,7 +141,7 @@ class DashboardOrganizador(QMainWindow):
         chart_l.addWidget(mock_pie)
         center_h.addWidget(chart_f, 2)
 
-        # Historial de Acciones (Derecha)
+        # Historial de Acciones
         act_f = QFrame(); act_f.setStyleSheet("background: #181818; border-radius: 10px; border: 1px solid #222;")
         act_l = QVBoxLayout(act_f)
         act_l.addWidget(QLabel("Últimas Acciones Inteligentes", styleSheet="color:white; font-weight:bold;"))
@@ -103,10 +152,10 @@ class DashboardOrganizador(QMainWindow):
         center_h.addWidget(act_f, 1)
         
         layout.addLayout(center_h, 1)
-        self.main_layout.addWidget(content)
+        return content
 
     def init_chat_floating(self):
-        """Inicializa la ventana de chat con capacidad de minimizar"""
+        """Inicializa la ventana de chat flotante original con capacidad de minimizar"""
         self.chat_win = QFrame(self)
         self.chat_win.setFixedSize(280, 380)
         self.chat_win.setStyleSheet("background: #1e1e1e; border-radius: 12px; border: 1px solid #eab308;")
@@ -115,7 +164,7 @@ class DashboardOrganizador(QMainWindow):
         shadow.setBlurRadius(25); shadow.setColor(QColor(0,0,0,200)); self.chat_win.setGraphicsEffect(shadow)
 
         self.chat_layout = QVBoxLayout(self.chat_win)
-        self.chat_layout.setContentsMargins(0,0,0,0) # Ajuste para que el botón cubra todo el ancho
+        self.chat_layout.setContentsMargins(0,0,0,0)
 
         # BOTÓN DE CABECERA (Para minimizar/maximizar)
         self.btn_toggle = QPushButton("🤖 Asistente PyOrganizer")
@@ -134,7 +183,7 @@ class DashboardOrganizador(QMainWindow):
         self.btn_toggle.clicked.connect(self.toggle_chat)
         self.chat_layout.addWidget(self.btn_toggle)
 
-        # CONTENEDOR DE CUERPO (Lo que se oculta)
+        # CONTENEDOR DE CUERPO
         self.chat_body = QWidget()
         self.body_layout = QVBoxLayout(self.chat_body)
         
@@ -150,23 +199,20 @@ class DashboardOrganizador(QMainWindow):
         self.chat_layout.addWidget(self.chat_body)
 
     def toggle_chat(self):
-        """Lógica para minimizar y maximizar el chat"""
+        """Oculta o expande el cuerpo del chat conversacional"""
         if self.chat_expandido:
-            # Minimizar
             self.chat_body.hide()
             self.chat_win.setFixedHeight(40)
             self.chat_expandido = False
         else:
-            # Maximizar
             self.chat_body.show()
             self.chat_win.setFixedHeight(380)
             self.chat_expandido = True
         
-        # Reposicionar después de cambiar el tamaño
         self.actualizar_posicion_chat()
 
     def actualizar_posicion_chat(self):
-        """Mantiene el chat en la esquina inferior derecha"""
+        """Mantiene el chat anclado estáticamente en la esquina inferior derecha"""
         x = self.width() - self.chat_win.width() - 20
         y = self.height() - self.chat_win.height() - 20
         self.chat_win.move(x, y)
@@ -176,8 +222,8 @@ class DashboardOrganizador(QMainWindow):
         super().resizeEvent(event)
 
     def enviar_a_controlador(self):
-        """Mantiene la lógica de envío pero limpia el input"""
-        txt = self.chat_input.text()
+        """Envía el comando de organización al controlador e inserta la burbuja de diálogo"""
+        txt = self.chat_input.text().strip()
         if not txt: return
         
         respuesta = self.asistente.procesar_peticion(txt)
@@ -185,7 +231,6 @@ class DashboardOrganizador(QMainWindow):
         self.msg_l.insertWidget(self.msg_l.count()-1, QLabel(f"<b>Tú:</b> {txt}", styleSheet="color: #888; font-size: 11px;"))
         self.msg_l.insertWidget(self.msg_l.count()-1, QLabel(f"<b>IA:</b> {respuesta}", styleSheet="color: white; background: #222; padding: 8px; border-radius: 5px;"))
         
-        # Desplazar al final automáticamente
+        # Forzar Scroll Automático al fondo
         self.chat_display.verticalScrollBar().setValue(self.chat_display.verticalScrollBar().maximum())
-        
         self.chat_input.clear()
