@@ -1,203 +1,191 @@
 import sys
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-                               QPushButton, QStackedWidget, QLabel, QLineEdit, 
-                               QFormLayout, QGroupBox, QComboBox, QTextEdit)
-from PySide6.QtCore import Qt
+                             QLabel, QPushButton, QFrame, QGridLayout, 
+                             QScrollArea, QLineEdit, QApplication, QGraphicsDropShadowEffect)
+from PySide6.QtCore import Qt, QSize
+from PySide6.QtGui import QColor
 from app.controlador.controlador_asistente import AsistenteVigiData
 
-class VentanaPrincipal(QMainWindow):
+class TarjetaMetrica(QFrame):
+    """Componente para las tarjetas de estadísticas superiores"""
+    def __init__(self, titulo, valor, color, parent=None):
+        super().__init__(parent)
+        self.setMinimumHeight(120)
+        self.setStyleSheet(f"background: #181818; border-radius: 10px; padding: 15px;")
+        l = QVBoxLayout(self)
+        t = QLabel(titulo); t.setStyleSheet("color: #aaaaaa; font-size: 11px; font-weight: bold;"); t.setAlignment(Qt.AlignCenter)
+        v = QLabel(valor); v.setStyleSheet(f"color: {color}; font-size: 32px; font-weight: bold; margin: 5px 0;"); v.setAlignment(Qt.AlignCenter)
+        l.addWidget(t); l.addWidget(v)
+
+class DashboardOrganizador(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("PY.Organizer - Panel Inteligente")
-        self.resize(900, 550)
+        self.asistente = AsistenteVigiData() 
         
-        # Instanciación directa del Controlador (MVC)
-        self.controlador = AsistenteVigiData()
+        # Variable de estado para el chat
+        self.chat_expandido = True 
         
-        self.init_ui()
+        self.setWindowTitle("PyOrganizer - Panel de Control")
+        self.resize(1200, 800)
+        self.setStyleSheet("QMainWindow { background-color: #0c0c0c; }")
 
-    def init_ui(self):
-        # Contenedor Base Central de la Aplicación
-        widget_central = QWidget()
-        self.setCentralWidget(widget_central)
-        layout_principal = QHBoxLayout(widget_central)
-        layout_principal.setContentsMargins(0, 0, 0, 0)
-        layout_principal.setSpacing(0)
+        self.central = QWidget()
+        self.setCentralWidget(self.central)
+        self.main_layout = QHBoxLayout(self.central)
+        self.main_layout.setContentsMargins(0,0,0,0)
+        self.main_layout.setSpacing(0)
 
-        # =========================================================================
-        # PANEL LATERAL IZQUIERDO (MENÚ DE NAVEGACIÓN)
-        # =========================================================================
-        panel_lateral = QWidget()
-        panel_lateral.setStyleSheet("background-color: #2c3e50; min-width: 180px; max-width: 180px;")
-        layout_lateral = QVBoxLayout(panel_lateral)
-        layout_lateral.setContentsMargins(10, 20, 10, 20)
+        self.init_sidebar()
+        self.init_content()
+        self.init_chat_floating()
 
-        lbl_logo = QLabel("PY.Organizer")
-        lbl_logo.setStyleSheet("color: white; font-size: 18px; font-weight: bold; margin-bottom: 25px; font-family: sans-serif;")
-        lbl_logo.setAlignment(Qt.AlignCenter)
-        layout_lateral.addWidget(lbl_logo)
-
-        self.btn_dashboard = QPushButton("📊 Dashboard")
-        self.btn_reglas_ia = QPushButton("⚙️ Reglas IA")
+    def init_sidebar(self):
+        sidebar = QFrame(); sidebar.setFixedWidth(240)
+        sidebar.setStyleSheet("background-color: #121212; border-right: 1px solid #222;")
+        l = QVBoxLayout(sidebar)
         
-        estilo_botones = """
-            QPushButton { 
-                color: white; background-color: transparent; text-align: left; 
-                padding: 10px; border-radius: 4px; font-size: 13px; font-weight: 500;
-            }
-            QPushButton:hover { background-color: #34495e; }
-        """
-        self.btn_dashboard.setStyleSheet(estilo_botones)
-        self.btn_reglas_ia.setStyleSheet(estilo_botones)
+        logo = QLabel("📁 Pyorganizer"); logo.setStyleSheet("color: white; font-size: 20px; font-weight: bold; margin: 25px;")
+        l.addWidget(logo)
 
-        layout_lateral.addWidget(self.btn_dashboard)
-        layout_lateral.addWidget(self.btn_reglas_ia)
-        layout_lateral.addStretch() # Empujar todo al tope superior
+        btn_active = QPushButton("  Panel Resumen")
+        btn_active.setStyleSheet("background: #eab308; color: white; text-align: left; padding: 12px; border-radius: 5px; font-weight: bold;")
+        l.addWidget(btn_active)
         
-        layout_principal.addWidget(panel_lateral)
-
-        # =========================================================================
-        # CONTENEDOR MULTIVISTA DERECHO (QStackedWidget)
-        # =========================================================================
-        self.vistas_apiladas = QStackedWidget()
-        self.vistas_apiladas.setStyleSheet("background-color: #f8f9fa;")
-
-        # Construcción dinámica de pantallas individuales
-        self.vista_dashboard = self.crear_vista_dashboard()
-        self.vista_reglas_ia = self.crear_vista_reglas_ia()
-
-        self.vistas_apiladas.addWidget(self.vista_dashboard) # Índice de pila: 0
-        self.vistas_apiladas.addWidget(self.vista_reglas_ia) # Índice de pila: 1
-
-        layout_principal.addWidget(self.vistas_apiladas)
-
-        # Enrutamiento de clics laterales para conmutar las pantallas del StackedWidget
-        self.btn_dashboard.clicked.connect(lambda: self.vistas_apiladas.setCurrentIndex(0))
-        self.btn_reglas_ia.clicked.connect(lambda: self.vistas_apiladas.setCurrentIndex(1))
-
-    def crear_vista_dashboard(self):
-        """Genera la vista principal que contiene el Chat Conversacional de Inteligencia Artificial"""
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        layout.setContentsMargins(20, 20, 20, 20)
-
-        lbl_tit = QLabel("📊 Panel de Control y Asistente")
-        lbl_tit.setStyleSheet("font-size: 18px; font-weight: bold; color: #333;")
-        layout.addWidget(lbl_tit)
-
-        # Pantalla de Chat Flotante Conversacional
-        self.pantalla_chat = QTextEdit()
-        self.pantalla_chat.setReadOnly(True)
-        self.pantalla_chat.setStyleSheet("background-color: white; border: 1px solid #ccc; border-radius: 5px; font-size: 13px; padding: 5px;")
-        self.pantalla_chat.append("🤖 <b>VigiData:</b> ¡Hola! ¿Qué archivos deseas organizar hoy? Puedes decirme por ejemplo: <i>'mueve el archivo tarea.docx a la carpeta unellez en el escritorio'</i>")
-        layout.addWidget(self.pantalla_chat)
-
-        # Entrada de Texto de Comandos
-        layout_input = QHBoxLayout()
-        self.chat_input = QLineEdit()
-        self.chat_input.setPlaceholderText("Escribe un comando aquí y presiona Enter...")
-        self.chat_input.setStyleSheet("padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px;")
-        self.chat_input.returnPressed.connect(self.enviar_a_controlador) # Enviar al pulsar Enter
-
-        btn_enviar = QPushButton("Enviar")
-        btn_enviar.setStyleSheet("background-color: #2c3e50; color: white; padding: 8px 15px; border-radius: 4px; font-weight: bold;")
-        btn_enviar.clicked.connect(self.enviar_a_controlador)
-
-        layout_input.addWidget(self.chat_input)
-        layout_input.addWidget(btn_enviar)
-        layout.addLayout(layout_input)
-
-        return widget
-
-    def crear_vista_reglas_ia(self):
-        """Nueva Vista avanzada: Permite al usuario dar reglas y parámetros restrictivos a cada carpeta"""
-        widget = QWidget()
-        layout_principal = QVBoxLayout(widget)
-        layout_principal.setContentsMargins(20, 20, 20, 20)
-
-        lbl_titulo = QLabel("⚙️ Gobernanza de Carpetas y Reglas Organizativas")
-        lbl_titulo.setStyleSheet("font-size: 18px; font-weight: bold; color: #2c3e50;")
-        layout_principal.addWidget(lbl_titulo)
+        for text in ["Reglas de IA", "Historial"]:
+            b = QPushButton(f"  {text}")
+            b.setStyleSheet("QPushButton { background: #121212; color: #white; text-align: left; padding: 12px; border: none; } QPushButton:hover { background: #eab308; color: white; }")
+            l.addWidget(b)
         
-        lbl_desc = QLabel("Asigna qué tipos de archivos o palabras clave tiene permitido almacenar cada carpeta de tu dispositivo.")
-        lbl_desc.setStyleSheet("font-size: 12px; color: #7f8c8d; margin-bottom: 15px;")
-        layout_principal.addWidget(lbl_desc)
-
-        grupo_config = QGroupBox("Establecer Parámetros de Almacenamiento")
-        layout_form = QFormLayout(grupo_config)
-
-        # Listado de carpetas que reconoce nuestro asistente
-        self.combo_carpetas = QComboBox()
-        opciones = ["universidad", "mis proyectos", "respaldos", "documentos", "fotos"]
-        self.combo_carpetas.addItems(opciones)
-        self.combo_carpetas.setStyleSheet("padding: 5px; font-size: 13px;")
+        l.addStretch()
         
-        self.input_ext_permitidas = QLineEdit()
-        self.input_ext_permitidas.setPlaceholderText("Ej: pdf, docx, xlsx (dejar vacío para aceptar todas)")
-        self.input_ext_permitidas.setStyleSheet("padding: 5px;")
+        btn_scan = QPushButton("ESCANEAR AHORA")
+        btn_scan.setStyleSheet("QPushButton { background: #121212; color: white; font-weight: bold; padding: 15px; border-radius: 5px; margin: 10px; } QPushButton:hover { background: #22c55e; color: white; }")
+        l.addWidget(btn_scan)
+        self.main_layout.addWidget(sidebar)
+
+    def init_content(self):
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(30, 30, 30, 30)
+
+        # Header
+        head = QVBoxLayout()
+        tit = QLabel("Panel de Control"); tit.setStyleSheet("color: white; font-size: 26px; font-weight: bold;"); tit.setAlignment(Qt.AlignCenter)
+        sub = QLabel(""); sub.setStyleSheet("color: #666; font-size: 14px;")
+        head.addWidget(tit); head.addWidget(sub)
+        layout.addLayout(head)
+
+        # Métricas (Basadas en la interfaz real)
+        grid = QGridLayout()
+        grid.addWidget(TarjetaMetrica("ARCHIVOS PROCESADOS", "1,250", "white"), 0, 0)
+        grid.addWidget(TarjetaMetrica("CATEGORÍAS IA", "12", "#eab308"), 0, 1)
+        grid.addWidget(TarjetaMetrica("PRECISIÓN NLP", "96.4%", "#22c55e"), 0, 2)
+        grid.addWidget(TarjetaMetrica("ESPACIO LIBERADO", "14.2 GB", "#eab308"), 0, 3)
+        layout.addLayout(grid)
+
+        # Área Central
+        center_h = QHBoxLayout()
+        chart_f = QFrame(); chart_f.setStyleSheet("background: #181818; border-radius: 10px; border: 1px solid #222;")
+        chart_l = QVBoxLayout(chart_f)
+        chart_l.addWidget(QLabel("Distribución de Archivos por Categoría", styleSheet="color:white; font-weight:bold;"))
+        mock_pie = QLabel("GRÁFICO DE DISTRIBUCIÓN"); mock_pie.setAlignment(Qt.AlignCenter); mock_pie.setStyleSheet("color: #333;")
+        chart_l.addWidget(mock_pie)
+        center_h.addWidget(chart_f, 2)
+
+        # Historial de Acciones (Derecha)
+        act_f = QFrame(); act_f.setStyleSheet("background: #181818; border-radius: 10px; border: 1px solid #222;")
+        act_l = QVBoxLayout(act_f)
+        act_l.addWidget(QLabel("Últimas Acciones Inteligentes", styleSheet="color:white; font-weight:bold;"))
+        self.scroll_act = QScrollArea(); self.scroll_act.setWidgetResizable(True); self.scroll_act.setStyleSheet("border:none;")
+        self.act_cont = QWidget(); self.act_list = QVBoxLayout(self.act_cont); self.act_list.addStretch()
+        self.scroll_act.setWidget(self.act_cont)
+        act_l.addWidget(self.scroll_act)
+        center_h.addWidget(act_f, 1)
         
-        self.input_palabras_clave = QLineEdit()
-        self.input_palabras_clave.setPlaceholderText("Ej: tarea, examen, unellez (dejar vacío para aceptar cualquiera)")
-        self.input_palabras_clave.setStyleSheet("padding: 5px;")
+        layout.addLayout(center_h, 1)
+        self.main_layout.addWidget(content)
 
-        layout_form.addRow("Seleccionar Carpeta:", self.combo_carpetas)
-        layout_form.addRow("Extensiones Permitidas:", self.input_ext_permitidas)
-        layout_form.addRow("Filtro por Palabras Clave:", self.input_palabras_clave)
-        layout_principal.addWidget(grupo_config)
+    def init_chat_floating(self):
+        """Inicializa la ventana de chat con capacidad de minimizar"""
+        self.chat_win = QFrame(self)
+        self.chat_win.setFixedSize(280, 380)
+        self.chat_win.setStyleSheet("background: #1e1e1e; border-radius: 12px; border: 1px solid #eab308;")
+        
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(25); shadow.setColor(QColor(0,0,0,200)); self.chat_win.setGraphicsEffect(shadow)
 
-        # Sincronización dinámica: Al cambiar la carpeta del menú desplegable se cargan sus reglas asociadas
-        self.combo_carpetas.currentTextChanged.connect(self.cargar_regla_seleccionada)
+        self.chat_layout = QVBoxLayout(self.chat_win)
+        self.chat_layout.setContentsMargins(0,0,0,0) # Ajuste para que el botón cubra todo el ancho
 
-        btn_guardar_regla = QPushButton("💾 Guardar Regla Organizativa")
-        btn_guardar_regla.setStyleSheet("""
+        # BOTÓN DE CABECERA (Para minimizar/maximizar)
+        self.btn_toggle = QPushButton("🤖 Asistente PyOrganizer")
+        self.btn_toggle.setFixedHeight(40)
+        self.btn_toggle.setStyleSheet("""
             QPushButton {
-                background-color: #3498db; color: white; font-weight: bold; 
-                padding: 10px; border-radius: 5px; font-size: 13px;
+                background: #eab308; 
+                color: white; 
+                font-weight: bold; 
+                border-top-left-radius: 10px; 
+                border-top-right-radius: 10px;
+                border: none;
             }
-            QPushButton:hover { background-color: #2980b9; }
+            QPushButton:hover { background: #d4a017; }
         """)
-        btn_guardar_regla.clicked.connect(self.guardar_regla_carpeta)
-        layout_principal.addWidget(btn_guardar_regla)
+        self.btn_toggle.clicked.connect(self.toggle_chat)
+        self.chat_layout.addWidget(self.btn_toggle)
 
-        layout_principal.addStretch()
+        # CONTENEDOR DE CUERPO (Lo que se oculta)
+        self.chat_body = QWidget()
+        self.body_layout = QVBoxLayout(self.chat_body)
         
-        self.cargar_regla_seleccionada() # Carga inicial obligatoria
-        return widget
+        self.chat_display = QScrollArea(); self.chat_display.setWidgetResizable(True); self.chat_display.setStyleSheet("border:none;")
+        self.msg_cont = QWidget(); self.msg_l = QVBoxLayout(self.msg_cont); self.msg_l.addStretch()
+        self.chat_display.setWidget(self.msg_cont)
+        self.body_layout.addWidget(self.chat_display)
 
-    def cargar_regla_seleccionada(self):
-        """Lee en caliente las reglas vigentes de la carpeta seleccionada y las pinta en pantalla"""
-        carpeta_actual = self.combo_carpetas.currentText().lower()
-        reglas_actuales = self.controlador.reglas_carpetas.get(carpeta_actual)
+        self.chat_input = QLineEdit(); self.chat_input.setPlaceholderText("Escribe un comando..."); self.chat_input.setStyleSheet("background: #121212; color: white; padding: 10px; border-radius: 5px; border: 1px solid #333;")
+        self.chat_input.returnPressed.connect(self.enviar_a_controlador)
+        self.body_layout.addWidget(self.chat_input)
 
-        if reglas_actuales:
-            self.input_ext_permitidas.setText(", ".join(reglas_actuales["extensiones"]))
-            self.input_palabras_clave.setText(", ".join(reglas_actuales["palabras"]))
+        self.chat_layout.addWidget(self.chat_body)
+
+    def toggle_chat(self):
+        """Lógica para minimizar y maximizar el chat"""
+        if self.chat_expandido:
+            # Minimizar
+            self.chat_body.hide()
+            self.chat_win.setFixedHeight(40)
+            self.chat_expandido = False
         else:
-            self.input_ext_permitidas.clear()
-            self.input_palabras_clave.clear()
-
-    def guardar_regla_carpeta(self):
-        """Guarda permanentemente las restricciones en la Base de Datos a través del Modelo"""
-        carpeta_objetivo = self.combo_carpetas.currentText().lower()
-        extensiones = self.input_ext_permitidas.text().strip()
-        palabras = self.input_palabras_clave.text().strip()
-
-        exito = self.controlador.modelo_org.guardar_o_actualizar_regla(carpeta_objetivo, extensiones, palabras)
+            # Maximizar
+            self.chat_body.show()
+            self.chat_win.setFixedHeight(380)
+            self.chat_expandido = True
         
-        if exito:
-            self.controlador.actualizar_reglas_en_memoria() # Actualizar la caché del cerebro de la IA
-            self.pantalla_chat.append(f"ℹ️ <b>Sistema:</b> Regla de almacenamiento guardada para la carpeta <u>{carpeta_objetivo}</u>.")
-            self.vistas_apiladas.setCurrentIndex(0) # Redirige automáticamente al chat principal
+        # Reposicionar después de cambiar el tamaño
+        self.actualizar_posicion_chat()
+
+    def actualizar_posicion_chat(self):
+        """Mantiene el chat en la esquina inferior derecha"""
+        x = self.width() - self.chat_win.width() - 20
+        y = self.height() - self.chat_win.height() - 20
+        self.chat_win.move(x, y)
+
+    def resizeEvent(self, event):
+        self.actualizar_posicion_chat()
+        super().resizeEvent(event)
 
     def enviar_a_controlador(self):
-        """Conecta el flujo del Chat directamente con las predicciones del Controlador"""
-        texto_usuario = self.chat_input.text().strip()
-        if not texto_usuario:
-            return
-
-        self.pantalla_chat.append(f"<br><b>Tú:</b> {texto_usuario}")
+        """Mantiene la lógica de envío pero limpia el input"""
+        txt = self.chat_input.text()
+        if not txt: return
+        
+        respuesta = self.asistente.procesar_peticion(txt)
+        
+        self.msg_l.insertWidget(self.msg_l.count()-1, QLabel(f"<b>Tú:</b> {txt}", styleSheet="color: #888; font-size: 11px;"))
+        self.msg_l.insertWidget(self.msg_l.count()-1, QLabel(f"<b>IA:</b> {respuesta}", styleSheet="color: white; background: #222; padding: 8px; border-radius: 5px;"))
+        
+        # Desplazar al final automáticamente
+        self.chat_display.verticalScrollBar().setValue(self.chat_display.verticalScrollBar().maximum())
+        
         self.chat_input.clear()
-
-        # Llamada al método procesador del Controlador (MVC)
-        respuesta_ia = self.controlador.procesar_peticion(texto_usuario)
-        self.pantalla_chat.append(f"🤖 <b>VigiData:</b> {respuesta_ia}")
