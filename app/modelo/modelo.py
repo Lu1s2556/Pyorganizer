@@ -2,8 +2,7 @@ import os
 import sqlite3
 from pathlib import Path
 from datetime import datetime
-from app.modelo.base_de_datos import GestorBaseDeDatos, inicializar_base_de_datos
-
+from app.modelo.base_de_datos import BaseDeDatos, GestorBaseDatos
 class ModeloOrganizador:
     def __init__(self):
         # Ruta dinámica de la base de datos en la carpeta recursos
