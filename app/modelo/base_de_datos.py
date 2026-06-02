@@ -30,11 +30,11 @@ class BaseDeDatos:
         if self.conexion:
             self.conexion.close()
 
-    def commit(self):
+    def confirmar(self):
         if self.conexion:
             self.conexion.commit()
 
-    def rollback(self):
+    def revertir(self):
         if self.conexion:
             self.conexion.rollback()
 
@@ -43,7 +43,7 @@ class BaseDeDatos:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         if exc_type:
-            self.rollback()
+            self.revertir()
         self.cerrar_conexion()
         return False
 
@@ -110,6 +110,15 @@ class GestorBaseDatos:
             )
         """)
 
+        # Tabla directorios_destino (carpetas designadas por reglas u usuario)
+        self.db.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS directorios_destino (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ruta TEXT NOT NULL UNIQUE,
+                nombre_alias TEXT,
+                fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         # Tabla errores_log
         self.db.cursor.execute("""
             CREATE TABLE IF NOT EXISTS errores_log (
@@ -138,8 +147,13 @@ class GestorBaseDatos:
         self.db.cursor.execute("CREATE INDEX IF NOT EXISTS idx_historial_tipo ON historial_operaciones(tipo_operacion)")
         self.db.cursor.execute("CREATE INDEX IF NOT EXISTS idx_errores_fecha ON errores_log(fecha_ocurrido)")
 
-        self.db.commit()
+        self.db.confirmar()
         print("✓ Tablas creadas exitosamente")
+        # Después de crear tablas, sembrar datos por defecto si están vacías
+        try:
+            self.sembrar_si_vacia()
+        except Exception as e:
+            print(f"Error durante el seeding por defecto: {e}")
 
     def registrar_operacion(self, nombre_archivo, extension, ruta_origen, ruta_destino, tipo_operacion, tamano_bytes=0, usuario='sistema', estado='completado'):
         try:
@@ -147,7 +161,7 @@ class GestorBaseDatos:
                 INSERT INTO historial_operaciones (nombre_archivo, extension, ruta_origen, ruta_destino, tipo_operacion, tamano_bytes, usuario, estado)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (nombre_archivo, extension, ruta_origen, ruta_destino, tipo_operacion, tamano_bytes, usuario, estado))
-            self.db.commit()
+            self.db.confirmar()
             return True
         except sqlite3.Error as e:
             self.logar_error("registro_operacion", str(e))
@@ -203,7 +217,7 @@ class GestorBaseDatos:
                 INSERT OR REPLACE INTO configuraciones (clave, valor, tipo_dato, descripcion) 
                 VALUES (?, ?, ?, ?)
             """, (clave, valor, tipo_dato, descripcion))
-            self.db.commit()
+            self.db.confirmar()
             return True
         except sqlite3.Error as e:
             self.logar_error("guardar_configuracion", str(e))
@@ -231,13 +245,75 @@ class GestorBaseDatos:
                 self.guardar_configuracion(clave, valor, tipo, desc)
         print("✓ Configuraciones inicializadas")
 
+    def sembrar_si_vacia(self):
+        """Inserta datos por defecto si las tablas clave están vacías."""
+        # Verificar directorios origen (carpetas_monitoreadas)
+        self.db.cursor.execute("SELECT COUNT(*) AS cnt FROM carpetas_monitoreadas")
+        cnt_origen = self.db.cursor.fetchone()[0]
+
+        # Verificar directorios destino
+        self.db.cursor.execute("SELECT COUNT(*) AS cnt FROM directorios_destino")
+        cnt_destino = self.db.cursor.fetchone()[0]
+
+        # Verificar reglas
+        self.db.cursor.execute("SELECT COUNT(*) AS cnt FROM reglas_organizacion")
+        cnt_reglas = self.db.cursor.fetchone()[0]
+
+        if cnt_origen == 0:
+            usuario = os.path.expanduser("~")
+            defaults_origen = [
+                (f"{usuario}/Downloads", "descargas"),
+                (f"{usuario}/Desktop", "escritorio"),
+                (f"{usuario}/Documents", "documentos"),
+            ]
+            for ruta, alias in defaults_origen:
+                try:
+                    self.agregar_carpeta_monitoreada(ruta, alias)
+                except Exception:
+                    pass
+
+        if cnt_destino == 0:
+            defaults_destino = [
+                (os.path.join(os.path.expanduser("~"), "Imágenes"), "Imágenes"),
+                (os.path.join(os.path.expanduser("~"), "Documentos"), "Documentos"),
+                (os.path.join(os.path.expanduser("~"), "Programas"), "Programas"),
+            ]
+            for ruta, alias in defaults_destino:
+                try:
+                    self.db.cursor.execute(
+                        "INSERT OR IGNORE INTO directorios_destino (ruta, nombre_alias) VALUES (?, ?)",
+                        (ruta, alias)
+                    )
+                except sqlite3.Error as e:
+                    self.logar_error("seed_directorios_destino", str(e))
+            self.db.confirmar()
+
+        if cnt_reglas == 0:
+            # Asegurar que existen destinos para asociar
+            self.db.cursor.execute("SELECT id, ruta, nombre_alias FROM directorios_destino")
+            destinos = {row['nombre_alias']: row['ruta'] for row in self.db.cursor.fetchall()}
+
+            reglas_default = [
+                ("Documentos", ".pdf,.docx,.txt", destinos.get('Documentos', 'Documentos'), 10),
+                ("Imágenes", ".jpg,.png", destinos.get('Imágenes', 'Imágenes'), 10),
+                ("Ejecutables", ".exe,.msi", destinos.get('Programas', 'Programas'), 5),
+            ]
+            for nombre, ext, destino, prioridad in reglas_default:
+                try:
+                    self.agregar_regla(nombre, ext, destino, prioridad)
+                except Exception:
+                    pass
+
+        # Commit final por si dejó operaciones pendientes
+        self.db.confirmar()
+
     def agregar_regla(self, nombre, extension, carpeta_destino, prioridad=0, activa=True):
         try:
             self.db.cursor.execute("""
                 INSERT INTO reglas_organizacion (nombre, extension, carpeta_destino, prioridad, activa) 
                 VALUES (?, ?, ?, ?, ?)
             """, (nombre, extension, carpeta_destino, prioridad, int(activa)))
-            self.db.commit()
+            self.db.confirmar()
             return True
         except sqlite3.Error as e:
             self.logar_error("agregar_regla_organizacion", str(e))
@@ -260,7 +336,7 @@ class GestorBaseDatos:
                 INSERT OR IGNORE INTO carpetas_monitoreadas (ruta, nombre_alias, activa) 
                 VALUES (?, ?, 1)
             """, (ruta, nombre_alias))
-            self.db.commit()
+            self.db.confirmar()
             return True
         except sqlite3.Error as e:
             self.logar_error("agregar_carpeta_monitoreada", str(e))
@@ -276,7 +352,7 @@ class GestorBaseDatos:
                 INSERT INTO errores_log (tipo_error, mensaje, traceback, fecha_ocurrido) 
                 VALUES (?, ?, ?, ?)
             """, (tipo_error, mensaje, traceback, datetime.now()))
-            self.db.commit()
+            self.db.confirmar()
             return True
         except sqlite3.Error as e:
             print(f"Error al logar error en la base de datos: {e}")
@@ -295,7 +371,7 @@ class GestorBaseDatos:
 
     def iniciar_sesion(self):
         self.db.cursor.execute("INSERT INTO sesiones (inicio_sesion) VALUES (?)", (datetime.now(),))
-        self.db.commit()
+        self.db.confirmar()
         return self.db.cursor.lastrowid
 
     def cerrar_sesion(self, id_sesion, operaciones=0, archivos=0):
@@ -304,7 +380,7 @@ class GestorBaseDatos:
             SET fin_sesion = ?, operaciones_realizadas = ?, archivos_procesados = ?
             WHERE id = ?
         """, (datetime.now(), operaciones, archivos, id_sesion))
-        self.db.commit()
+        self.db.confirmar()
 
     def verificar_integridad(self):
         self.db.cursor.execute("PRAGMA integrity_check")
