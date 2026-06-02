@@ -6,9 +6,10 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QColor
 
-# Importamos el controlador y la nueva interfaz de reglas del mismo directorio
+# Importaciones de controladores y sub-vistas modulares
 from app.controlador.controlador_asistente import AsistenteVigiData
 from app.vista.vista_reglas import VistaReglasOrganizacion
+from app.vista.vista_configuracion import VistaConfiguracionGlobal # Fase 1 Importada
 
 class TarjetaMetrica(QFrame):
     """Componente para las tarjetas de estadísticas superiores"""
@@ -39,15 +40,15 @@ class DashboardOrganizador(QMainWindow):
         self.main_layout.setContentsMargins(0,0,0,0)
         self.main_layout.setSpacing(0)
 
-        # Contenedor Multi-vista para alternar los paneles derechos sin abrir ventanas
+        # Contenedor Multi-vista para alternar los paneles derechos
         self.content_stack = QStackedWidget()
 
         self.init_sidebar()
-        self.init_content_views() # Inicializa y asocia las sub-vistas al stack
+        self.init_content_views() 
         self.init_chat_floating()
 
     def init_sidebar(self):
-        """Barra lateral izquierda con tu diseño y estilos originales"""
+        """Barra lateral izquierda adaptada para incluir la Fase 1"""
         sidebar = QFrame(); sidebar.setFixedWidth(240)
         sidebar.setStyleSheet("background-color: #121212; border-right: 1px solid #222;")
         l = QVBoxLayout(sidebar)
@@ -55,23 +56,27 @@ class DashboardOrganizador(QMainWindow):
         logo = QLabel("📁 Pyorganizer"); logo.setStyleSheet("color: white; font-size: 20px; font-weight: bold; margin: 25px;")
         l.addWidget(logo)
 
-        # Botón Panel Resumen (Activo por defecto)
+        # Estilo unificado de botones de la barra lateral
+        estilo_btn = "QPushButton { background: #121212; color: white; text-align: left; padding: 12px; border: none; } QPushButton:hover { background: #eab308; color: white; }"
+
+        # Botón 0: Panel Resumen (Activo por defecto)
         self.btn_resumen = QPushButton("  Panel Resumen")
         self.btn_resumen.setStyleSheet("background: #eab308; color: white; text-align: left; padding: 12px; border-radius: 5px; font-weight: bold;")
         self.btn_resumen.clicked.connect(lambda: self.cambiar_vista(0, self.btn_resumen))
         l.addWidget(self.btn_resumen)
+
+        # Botón 1: CONFIGURACIÓN GLOBAL (Fase 1 asignada al Índice 1)
+        self.btn_config_global = QPushButton(" Configuración Global")
+        self.btn_config_global.setStyleSheet(estilo_btn)
+        self.btn_config_global.clicked.connect(lambda: self.cambiar_vista(1, self.btn_config_global))
+        l.addWidget(self.btn_config_global)
         
-        # Botón Reglas de IA (Redirige a la nueva UI de reglas_organizacion)
+        # Botón 2: Reglas de IA (Avanzado asignado al Índice 2)
         self.btn_reglas = QPushButton("  Reglas de IA")
-        self.btn_reglas.setStyleSheet("QPushButton { background: #121212; color: white; text-align: left; padding: 12px; border: none; } QPushButton:hover { background: #eab308; color: white; }")
-        self.btn_reglas.clicked.connect(lambda: self.cambiar_vista(1, self.btn_reglas))
+        self.btn_reglas.setStyleSheet(estilo_btn)
+        self.btn_reglas.clicked.connect(lambda: self.cambiar_vista(2, self.btn_reglas))
         l.addWidget(self.btn_reglas)
 
-        # Botón Historial
-        self.btn_historial = QPushButton("  Historial")
-        self.btn_historial.setStyleSheet("QPushButton { background: #121212; color: white; text-align: left; padding: 12px; border: none; } QPushButton:hover { background: #eab308; color: white; }")
-        l.addWidget(self.btn_historial)
-        
         l.addStretch()
         
         btn_scan = QPushButton("ESCANEAR AHORA")
@@ -81,18 +86,25 @@ class DashboardOrganizador(QMainWindow):
 
     def init_content_views(self):
         """Asigna y empaqueta las secciones dentro del QStackedWidget derecho"""
-        # PANTALLA 0: Tu vista original del Dashboard de antes
+        # PANTALLA 0: Tu vista original del Dashboard
         self.vista_dashboard = self.crear_panel_resumen_original()
         
-        # PANTALLA 1: La nueva UI de reglas_organizacion (Cargada desde el otro archivo)
+        # PANTALLA 1: NUEVA Fase 1 (Configuración Global de Orígenes/Destinos)
+        self.vista_configuracion = VistaConfiguracionGlobal(
+            asistente=self.asistente,
+            callback_regresar=lambda: self.cambiar_vista(0, self.btn_resumen)
+        )
+        
+        # PANTALLA 2: Interfaz de reglas organizativas detalladas
         self.vista_reglas_ia = VistaReglasOrganizacion(
             asistente=self.asistente, 
             callback_regresar=lambda: self.cambiar_vista(0, self.btn_resumen)
         )
 
-        # Agregamos los componentes al mazo secuencial
-        self.content_stack.addWidget(self.vista_dashboard) # Índice 0
-        self.content_stack.addWidget(self.vista_reglas_ia) # Índice 1
+        # Agregamos los componentes al stack secuencial
+        self.content_stack.addWidget(self.vista_dashboard)     # Índice 0
+        self.content_stack.addWidget(self.vista_configuracion) # Índice 1
+        self.content_stack.addWidget(self.vista_reglas_ia)     # Índice 2
 
         self.main_layout.addWidget(self.content_stack)
 
@@ -100,11 +112,12 @@ class DashboardOrganizador(QMainWindow):
         """Efectúa la transición de la pantalla y actualiza el botón seleccionado en la barra lateral"""
         self.content_stack.setCurrentIndex(indice)
         
-        # Estilos base para simular la selección nativa de tu diseño
         estilo_base = "QPushButton { background: #121212; color: white; text-align: left; padding: 12px; border: none; } QPushButton:hover { background: #eab308; color: white; }"
         estilo_activo = "background: #eab308; color: white; text-align: left; padding: 12px; border-radius: 5px; font-weight: bold;"
         
+        # Reseteamos estilos de los botones de navegación activos
         self.btn_resumen.setStyleSheet(estilo_base)
+        self.btn_config_global.setStyleSheet(estilo_base)
         self.btn_reglas.setStyleSheet(estilo_base)
         
         boton_activo.setStyleSheet(estilo_activo)
@@ -115,14 +128,12 @@ class DashboardOrganizador(QMainWindow):
         layout = QVBoxLayout(content)
         layout.setContentsMargins(30, 30, 30, 30)
 
-        # Header
         head = QVBoxLayout()
         tit = QLabel("Panel de Control"); tit.setStyleSheet("color: white; font-size: 26px; font-weight: bold;")
         sub = QLabel(""); sub.setStyleSheet("color: #666; font-size: 14px;")
         head.addWidget(tit); head.addWidget(sub)
         layout.addLayout(head)
 
-        # Métricas
         grid = QGridLayout()
         grid.addWidget(TarjetaMetrica("ARCHIVOS PROCESADOS", "1,250", "white"), 0, 0)
         grid.addWidget(TarjetaMetrica("CATEGORÍAS IA", "12", "#eab308"), 0, 1)
@@ -130,10 +141,8 @@ class DashboardOrganizador(QMainWindow):
         grid.addWidget(TarjetaMetrica("ESPACIO LIBERADO", "14.2 GB", "#eab308"), 0, 3)
         layout.addLayout(grid)
 
-        # Área Central (Gráfico e Historial)
         center_h = QHBoxLayout()
         
-        # Gráfico
         chart_f = QFrame(); chart_f.setStyleSheet("background: #181818; border-radius: 10px; border: 1px solid #222;")
         chart_l = QVBoxLayout(chart_f)
         chart_l.addWidget(QLabel("Distribución de Archivos por Categoría", styleSheet="color:white; font-weight:bold;"))
@@ -141,7 +150,6 @@ class DashboardOrganizador(QMainWindow):
         chart_l.addWidget(mock_pie)
         center_h.addWidget(chart_f, 2)
 
-        # Historial de Acciones
         act_f = QFrame(); act_f.setStyleSheet("background: #181818; border-radius: 10px; border: 1px solid #222;")
         act_l = QVBoxLayout(act_f)
         act_l.addWidget(QLabel("Últimas Acciones Inteligentes", styleSheet="color:white; font-weight:bold;"))
@@ -166,24 +174,12 @@ class DashboardOrganizador(QMainWindow):
         self.chat_layout = QVBoxLayout(self.chat_win)
         self.chat_layout.setContentsMargins(0,0,0,0)
 
-        # BOTÓN DE CABECERA (Para minimizar/maximizar)
         self.btn_toggle = QPushButton("🤖 Asistente PyOrganizer")
         self.btn_toggle.setFixedHeight(40)
-        self.btn_toggle.setStyleSheet("""
-            QPushButton {
-                background: #eab308; 
-                color: white; 
-                font-weight: bold; 
-                border-top-left-radius: 10px; 
-                border-top-right-radius: 10px;
-                border: none;
-            }
-            QPushButton:hover { background: #d4a017; }
-        """)
+        self.btn_toggle.setStyleSheet("QPushButton { background: #eab308; color: white; font-weight: bold; border-top-left-radius: 10px; border-top-right-radius: 10px; border: none; } QPushButton:hover { background: #d4a017; }")
         self.btn_toggle.clicked.connect(self.toggle_chat)
         self.chat_layout.addWidget(self.btn_toggle)
 
-        # CONTENEDOR DE CUERPO
         self.chat_body = QWidget()
         self.body_layout = QVBoxLayout(self.chat_body)
         
@@ -199,7 +195,6 @@ class DashboardOrganizador(QMainWindow):
         self.chat_layout.addWidget(self.chat_body)
 
     def toggle_chat(self):
-        """Oculta o expande el cuerpo del chat conversacional"""
         if self.chat_expandido:
             self.chat_body.hide()
             self.chat_win.setFixedHeight(40)
@@ -208,11 +203,9 @@ class DashboardOrganizador(QMainWindow):
             self.chat_body.show()
             self.chat_win.setFixedHeight(380)
             self.chat_expandido = True
-        
         self.actualizar_posicion_chat()
 
     def actualizar_posicion_chat(self):
-        """Mantiene el chat anclado estáticamente en la esquina inferior derecha"""
         x = self.width() - self.chat_win.width() - 20
         y = self.height() - self.chat_win.height() - 20
         self.chat_win.move(x, y)
@@ -222,7 +215,6 @@ class DashboardOrganizador(QMainWindow):
         super().resizeEvent(event)
 
     def enviar_a_controlador(self):
-        """Envía el comando de organización al controlador e inserta la burbuja de diálogo"""
         txt = self.chat_input.text().strip()
         if not txt: return
         
@@ -231,6 +223,5 @@ class DashboardOrganizador(QMainWindow):
         self.msg_l.insertWidget(self.msg_l.count()-1, QLabel(f"<b>Tú:</b> {txt}", styleSheet="color: #888; font-size: 11px;"))
         self.msg_l.insertWidget(self.msg_l.count()-1, QLabel(f"<b>IA:</b> {respuesta}", styleSheet="color: white; background: #222; padding: 8px; border-radius: 5px;"))
         
-        # Forzar Scroll Automático al fondo
         self.chat_display.verticalScrollBar().setValue(self.chat_display.verticalScrollBar().maximum())
         self.chat_input.clear()
