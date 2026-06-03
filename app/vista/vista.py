@@ -4,8 +4,10 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QScrollArea, QLineEdit, QApplication, QGraphicsDropShadowEffect,
                                QStackedWidget)
 from PySide6.QtCore import Qt, QSize
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QFont
 from PySide6.QtCore import QThread, Signal
+from app.services import get_total_movidos, get_total_reglas
+from app.signals import app_signals
 from app.core.motor_organizador import MotorOrganizadorCore
 # Importaciones de controladores y sub-vistas modulares
 from app.controlador.controlador_asistente import AsistenteVigiData
@@ -52,6 +54,10 @@ class DashboardOrganizador(QMainWindow):
         
         self.setWindowTitle("PyOrganizer - Panel de Control")
         self.resize(1200, 800)
+        try:
+            self.showMaximized()
+        except Exception:
+            pass
         self.setStyleSheet("QMainWindow { background-color: #0c0c0c; }")
 
         self.central = QWidget()
@@ -66,6 +72,22 @@ class DashboardOrganizador(QMainWindow):
         self.init_sidebar()
         self.init_content_views() 
         self.init_chat_floating()
+
+        # Mensaje de bienvenida automático
+        try:
+            self.msg_l.insertWidget(self.msg_l.count()-1, QLabel("<b>IA:</b> Hola, ¿cómo te puedo ayudar?", styleSheet="color: white; background: #222; padding: 8px; border-radius: 5px;"))
+            self.msg_l.insertWidget(self.msg_l.count()-1, QLabel("<b>IA:</b> Escribe /ayuda si no sabes qué comando usar.", styleSheet="color: white; background: #222; padding: 8px; border-radius: 5px;"))
+        except Exception:
+            pass
+
+        # Iniciar watchdog para monitorear carpetas de origen configuradas
+        try:
+            from app.core.motor_organizador import WatchdogThread
+            self.watchdog = WatchdogThread(self.asistente.modelo_org.db_path)
+            self.watchdog.file_created.connect(self.registrar_accion_en_interfaz)
+            self.watchdog.start()
+        except Exception:
+            pass
 
     def init_sidebar(self):
         """Barra lateral izquierda adaptada para incluir la Fase 1"""
@@ -99,10 +121,7 @@ class DashboardOrganizador(QMainWindow):
 
         l.addStretch()
         
-        btn_scan = QPushButton("ESCANEAR AHORA")
-        btn_scan.setStyleSheet("QPushButton { background: #121212; color: white; font-weight: bold; padding: 15px; border-radius: 5px; margin: 10px; } QPushButton:hover { background: #22c55e; color: white; }")
-        btn_scan.clicked.connect(self.ejecutar_escaneo_asincrono)
-        l.addWidget(btn_scan)
+        # The manual scan button removed: watchdog runs automatically
         self.main_layout.addWidget(sidebar)
 
     def init_content_views(self):
@@ -156,8 +175,20 @@ class DashboardOrganizador(QMainWindow):
         layout.addLayout(head)
 
         grid = QGridLayout()
-        grid.addWidget(TarjetaMetrica("ARCHIVOS PROCESADOS", "1,250", "white"), 0, 0)
-        grid.addWidget(TarjetaMetrica("CATEGORÍAS IA", "12", "#eab308"), 0, 1)
+        try:
+            db_path = self.asistente.modelo_org.db_path
+            total_mov = f"{get_total_movidos(db_path):,}"
+        except Exception:
+            total_mov = "0"
+
+        try:
+            db_path = self.asistente.modelo_org.db_path
+            total_reglas = f"{get_total_reglas(db_path):,}"
+        except Exception:
+            total_reglas = "0"
+
+        grid.addWidget(TarjetaMetrica("ARCHIVOS PROCESADOS", total_mov, "white"), 0, 0)
+        grid.addWidget(TarjetaMetrica("CATEGORÍAS IA", total_reglas, "#eab308"), 0, 1)
         grid.addWidget(TarjetaMetrica("PRECISIÓN NLP", "96.4%", "#22c55e"), 0, 2)
         grid.addWidget(TarjetaMetrica("ESPACIO LIBERADO", "14.2 GB", "#eab308"), 0, 3)
         layout.addLayout(grid)
@@ -245,6 +276,12 @@ class DashboardOrganizador(QMainWindow):
     def enviar_a_controlador(self):
         txt = self.chat_input.text().strip()
         if not txt: return
+        # Manejar comando de ayuda localmente
+        if txt.lower() in ['/ayuda', 'ayuda']:
+            self.mostrar_ayuda()
+            self.chat_input.clear()
+            return
+
         respuesta = self.asistente.procesar_peticion(txt)
 
         self.msg_l.insertWidget(self.msg_l.count()-1, QLabel(f"<b>Tú:</b> {txt}", styleSheet="color: #888; font-size: 11px;"))
@@ -298,6 +335,75 @@ class DashboardOrganizador(QMainWindow):
         self.act_list.insertWidget(self.act_list.count() - 1, lbl)
         self.scroll_act.verticalScrollBar().setValue(self.scroll_act.verticalScrollBar().maximum())
 
+    def refrescar_panel_resumen(self):
+        """Actualiza las tarjetas superiores consultando `services.py`."""
+        try:
+            db_path = self.asistente.modelo_org.db_path
+            total_mov = f"{get_total_movidos(db_path):,}"
+            total_reglas = f"{get_total_reglas(db_path):,}"
+        except Exception:
+            return
+
+        # Reemplazar las dos primeras tarjetas en el grid (si existe)
+        try:
+            # buscar el grid en la estructura del layout
+            layout_main = self.vista_dashboard.layout()
+            grid = None
+            for i in range(layout_main.count()):
+                item = layout_main.itemAt(i)
+                if isinstance(item, QGridLayout) or hasattr(item, 'layout'):
+                    # attempt to get grid
+                    maybe = item.layout() if hasattr(item, 'layout') else None
+                    if isinstance(maybe, QGridLayout):
+                        grid = maybe
+                        break
+        except Exception:
+            grid = None
+
+        if grid is None:
+            return
+
+        # Remove existing widgets at positions 0,0 and 0,1
+        for col in (0,1):
+            item = grid.itemAtPosition(0, col)
+            if item and item.widget():
+                w = item.widget()
+                w.setParent(None)
+
+        grid.addWidget(TarjetaMetrica("ARCHIVOS PROCESADOS", total_mov, "white"), 0, 0)
+        grid.addWidget(TarjetaMetrica("CATEGORÍAS IA", total_reglas, "#eab308"), 0, 1)
+
+    def mostrar_ayuda(self):
+        """Muestra un bloque HTML con ejemplos y alias reconocidos."""
+        # Construir lista de alias dinámicamente desde el asistente
+        try:
+            alias_keys = list(self.asistente.rutas_atajo.keys())
+        except Exception:
+            alias_keys = ['escritorio', 'documentos', 'descargas']
+
+        ejemplos = [
+            f"Mueve <b>archivos</b> a <b>{alias_keys[1]}</b>",
+            f"Crea una carpeta llamada <b>fotos</b> en <b>{alias_keys[0]}</b>",
+            f"Mueve <b>pdf</b> a <b>{alias_keys[2]}</b>",
+        ]
+
+        # Incluir algunos alias clave si existen
+        alias_html = ''.join(f"<li>{a}</li>" for a in alias_keys[:6])
+
+        html = f"<div style='color:#ddd; font-size:13px; line-height:1.4;'>"
+        html += "<b>Comandos útiles</b><ul>"
+        for e in ejemplos:
+            html += f"<li>{e}</li>"
+        html += "</ul>"
+        html += "<b>Alias reconocidos</b><ul>" + alias_html + "</ul></div>"
+
+        lbl = QLabel(html)
+        lbl.setStyleSheet("color: white; background: #222; padding: 8px; border-radius: 5px;")
+        lbl.setTextFormat(Qt.RichText)
+        self.msg_l.insertWidget(self.msg_l.count()-1, QLabel(f"<b>Tú:</b> /ayuda", styleSheet="color: #888; font-size: 11px;"))
+        self.msg_l.insertWidget(self.msg_l.count()-1, lbl)
+        self.chat_display.verticalScrollBar().setValue(self.chat_display.verticalScrollBar().maximum())
+
     def ejecutar_escaneo_asincrono(self):
         """Prepara e inicia el hilo secundario del Core"""
         # Deshabilitamos temporalmente el botón para evitar doble ejecución masiva
@@ -311,7 +417,12 @@ class DashboardOrganizador(QMainWindow):
         # Conectamos las señales del hilo a la interfaz o historial
         self.hilo_trabajo.progreso_senal.connect(self.registrar_accion_en_interfaz)
         self.hilo_trabajo.finalizado_senal.connect(lambda total: self.finalizar_escaneo(total, self.sender()))
-        
+        # Conectar señal global de estadísticas para refrescar panel resumen
+        try:
+            app_signals.stats_changed.connect(self.refrescar_panel_resumen)
+        except Exception:
+            pass
+
         # Iniciar hilo
         self.hilo_trabajo.start()
 

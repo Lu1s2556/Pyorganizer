@@ -6,6 +6,7 @@ from pathlib import Path
 from difflib import get_close_matches
 from PySide6.QtCore import QObject, Signal
 from app.modelo.modelo import ModeloOrganizador
+from app.signals import app_signals
 
 
 class AsistenteVigiData(QObject):
@@ -231,20 +232,16 @@ class AsistenteVigiData(QObject):
                         
                         # Ejecución física del traslado y almacenamiento en BD
                         if debe_moverse:
-                            ruta_final = destino_dir / item.name
-                            tamano_archivo = item.stat().st_size
-                            
-                            shutil.move(str(item), str(ruta_final))
-                            
-                            # Registro histórico para cumplir las especificaciones del MVC
-                            self.modelo_org.registrar_accion(
-                                nombre=item.name,
-                                tipo=item.suffix,
-                                origen=str(carpeta),
-                                destino=str(destino_dir),
-                                tamano_bytes=tamano_archivo
-                            )
-                            archivos_movidos.append(item.name)
+                            # Use shared helper to move and register
+                            moved = self._move_and_register(item, destino_dir, carpeta)
+                            if moved:
+                                archivos_movidos.append(item.name)
+
+                            # Emitir señal global de cambio de estadísticas
+                            try:
+                                app_signals.stats_changed.emit()
+                            except Exception:
+                                pass
 
             # Respuesta conversacional limpia para el chat de VigiData
             if archivos_movidos:
@@ -256,3 +253,43 @@ class AsistenteVigiData(QObject):
         
         except Exception as e:
             return f"❌ Error en la transferencia: {str(e)}"
+
+    def _move_and_register(self, item, destino_dir: Path, carpeta: Path) -> bool:
+        """Mueve un archivo físicamente, registra en la BD y emite señal global."""
+        try:
+            ruta_final = destino_dir / item.name
+            tamano_archivo = item.stat().st_size
+
+            # Manejo simple de colisiones
+            if ruta_final.exists():
+                nombre_base = item.stem
+                ext = item.suffix.lstrip('.')
+                contador = 1
+                while ruta_final.exists():
+                    ruta_final = destino_dir / f"{nombre_base}_{contador}.{ext}"
+                    contador += 1
+
+            shutil.move(str(item), str(ruta_final))
+
+            # Registro histórico
+            try:
+                self.modelo_org.registrar_accion(
+                    nombre=item.name,
+                    tipo=item.suffix,
+                    origen=str(carpeta),
+                    destino=str(destino_dir),
+                    tamano_bytes=tamano_archivo
+                )
+            except Exception:
+                pass
+
+            # Emitir señal global de cambio de estadísticas
+            try:
+                from app.signals import app_signals
+                app_signals.stats_changed.emit()
+            except Exception:
+                pass
+
+            return True
+        except Exception:
+            return False

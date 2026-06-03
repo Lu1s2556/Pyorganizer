@@ -16,6 +16,7 @@ except Exception:
 
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+from app.controlador.controlador_asistente import AsistenteVigiData
 
 
 class WatchdogThread(QThread):
@@ -112,8 +113,27 @@ class MotorOrganizadorCore:
         origenes = [Path(fila[0]) for fila in cursor.fetchall() if os.path.exists(fila[0])]
 
         # 2. Obtener mapas de carpetas destino (alias -> ruta_real)
-        cursor.execute("SELECT nombre_alias, ruta FROM directorios_destino")
-        destinos = {fila[0].lower(): Path(fila[1]) for fila in cursor.fetchall()}
+        destinos = {}
+        try:
+            cursor.execute("SELECT nombre_alias, ruta FROM directorios_destino")
+            destinos = {fila[0].lower(): Path(fila[1]) for fila in cursor.fetchall()}
+        except Exception:
+            # Fallbacks: try common alternative column names
+            try:
+                cursor.execute("SELECT alias, ruta FROM directorios_destino")
+                destinos = {fila[0].lower(): Path(fila[1]) for fila in cursor.fetchall()}
+            except Exception:
+                try:
+                    cursor.execute("SELECT nombre, ruta FROM directorios_destino")
+                    destinos = {fila[0].lower(): Path(fila[1]) for fila in cursor.fetchall()}
+                except Exception:
+                    # As a last resort, attempt to read only ruta and create numeric aliases
+                    try:
+                        cursor.execute("SELECT ruta FROM directorios_destino")
+                        for idx, fila in enumerate(cursor.fetchall()):
+                            destinos[f"destino_{idx}"] = Path(fila[0])
+                    except Exception:
+                        destinos = {}
 
         # 3. Obtener reglas de organización activas ordenadas por prioridad de mayor a menor
         cursor.execute("""
@@ -174,11 +194,15 @@ class MotorOrganizadorCore:
                                         contador += 1
 
                                 try:
-                                    shutil.move(str(archivo_path), str(ruta_final_archivo))
-                                    archivos_movidos += 1
-                                    
-                                    if callback_progreso:
-                                        callback_progreso(f"Movido: {archivo_path.name} → {alias_dest}")
+                                            # Delegate actual move + registration to helper in controller
+                                            asist = AsistenteVigiData()
+                                            # Ensure destino dir exists
+                                            os.makedirs(ruta_final_dir, exist_ok=True)
+                                            moved = asist._move_and_register(archivo_path, ruta_final_dir, ruta_origen)
+                                            if moved:
+                                                archivos_movidos += 1
+                                                if callback_progreso:
+                                                    callback_progreso(f"Movido: {archivo_path.name} → {alias_dest}")
                                 except Exception as e:
                                     if callback_progreso:
                                         callback_progreso(f"Error al mover {archivo_path.name}: {str(e)}")
