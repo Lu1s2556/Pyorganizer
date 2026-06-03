@@ -5,7 +5,8 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QStackedWidget)
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QColor
-
+from PySide6.QtCore import QThread, Signal
+from app.core.motor_organizador import MotorOrganizadorCore
 # Importaciones de controladores y sub-vistas modulares
 from app.controlador.controlador_asistente import AsistenteVigiData
 from app.vista.vista_reglas import VistaReglasOrganizacion
@@ -21,6 +22,20 @@ class TarjetaMetrica(QFrame):
         t = QLabel(titulo); t.setStyleSheet("color: #aaaaaa; font-size: 11px; font-weight: bold;"); t.setAlignment(Qt.AlignCenter)
         v = QLabel(valor); v.setStyleSheet(f"color: {color}; font-size: 32px; font-weight: bold; margin: 5px 0;"); v.setAlignment(Qt.AlignCenter)
         l.addWidget(t); l.addWidget(v)
+
+class HiloOrganizador(QThread):
+    """Hilo secundario de alta eficiencia para ejecutar el motor sin congelar la UI"""
+    progreso_senal = Signal(str)
+    finalizado_senal = Signal(int)
+
+    def __init__(self, motor):
+        super().__init__()
+        self.motor = motor
+
+    def run(self):
+        # Ejecuta el escaneo pesado en segundo plano
+        total = self.motor.procesar_organizacion(callback_progreso=self.progreso_senal.emit)
+        self.finalizado_senal.emit(total)
 
 class DashboardOrganizador(QMainWindow):
     def __init__(self):
@@ -81,6 +96,7 @@ class DashboardOrganizador(QMainWindow):
         
         btn_scan = QPushButton("ESCANEAR AHORA")
         btn_scan.setStyleSheet("QPushButton { background: #121212; color: white; font-weight: bold; padding: 15px; border-radius: 5px; margin: 10px; } QPushButton:hover { background: #22c55e; color: white; }")
+        btn_scan.clicked.connect(self.ejecutar_escaneo_asincrono)
         l.addWidget(btn_scan)
         self.main_layout.addWidget(sidebar)
 
@@ -225,3 +241,42 @@ class DashboardOrganizador(QMainWindow):
         
         self.chat_display.verticalScrollBar().setValue(self.chat_display.verticalScrollBar().maximum())
         self.chat_input.clear()
+
+    def ejecutar_escaneo_asincrono(self):
+        """Prepara e inicia el hilo secundario del Core"""
+        # Deshabilitamos temporalmente el botón para evitar doble ejecución masiva
+        self.sender().setEnabled(False)
+        self.sender().setText("ESCANEANDO...")
+
+        # Instanciamos el Core pasándole la ruta de la base de datos del modelo
+        motor = MotorOrganizadorCore(self.asistente.modelo_org.db_path)
+        
+        self.hilo_trabajo = HiloOrganizador(motor)
+        # Conectamos las señales del hilo a la interfaz o historial
+        self.hilo_trabajo.progreso_senal.connect(self.registrar_accion_en_interfaz)
+        self.hilo_trabajo.finalizado_senal.connect(lambda total: self.finalizar_escaneo(total, self.sender()))
+        
+        # Iniciar hilo
+        self.hilo_trabajo.start()
+
+    def registrar_accion_en_interfaz(self, mensaje):
+        """Agrega los movimientos en tiempo real en tu contenedor de Últimas Acciones Inteligentes"""
+        lbl_accion = QLabel(mensaje)
+        lbl_accion.setStyleSheet("color: #22c55e; font-size: 11px; padding: 2px; background: #121212; border-radius: 3px; margin: 2px 0;")
+        # Insertar arriba del espaciador stretch del historial
+        self.act_list.insertWidget(self.act_list.count() - 1, lbl_accion)
+        self.scroll_act.verticalScrollBar().setValue(self.scroll_act.verticalScrollBar().maximum())
+
+    def finalizar_escaneo(self, total_archivos, boton_escanear):
+        """Restablece el botón y muestra el resumen del proceso"""
+        boton_escanear.setEnabled(True)
+        boton_escanear.setText("ESCANEAR AHORA")
+        
+        # Registrar resumen en la sección de historial
+        lbl_resumen = QLabel(f"➔ Escaneo Completo. Archivos ordenados: {total_archivos}")
+        lbl_resumen.setStyleSheet("color: white; font-weight: bold; font-size: 12px; padding: 5px; background: #222; border-radius: 4px; margin: 5px 0;")
+        self.act_list.insertWidget(self.act_list.count() - 1, lbl_resumen)
+        
+        # Mostrar alerta nativa ligera
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.information(self, "Proceso Concluido", f"El motor ha finalizado el ordenamiento.\nArchivos movidos con éxito: {total_archivos}")

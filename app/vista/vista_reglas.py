@@ -8,10 +8,10 @@ class VistaReglasOrganizacion(QWidget):
     def __init__(self, asistente, callback_regresar, parent=None):
         super().__init__(parent)
         self.asistente = asistente
-        self.callback_regresar = callback_regresar # Función para volver al Dashboard
+        self.callback_regresar = callback_regresar # Función para regresar al Dashboard
         
         self.init_ui()
-        self.cargar_reglas_en_tabla()
+        self.actualizar_selector_carpetas() # Cargar carpetas dinámicamente desde Fase 1
 
     def init_ui(self):
         layout_principal = QVBoxLayout(self)
@@ -19,24 +19,34 @@ class VistaReglasOrganizacion(QWidget):
         layout_principal.setSpacing(20)
 
         # =========================================================================
-        # CABECERA DE LA SECCIÓN
+        # CABECERA DE LA SECCIÓN (FASE 2)
         # =========================================================================
         head = QVBoxLayout()
-        tit = QLabel("Reglas de Organización"); tit.setStyleSheet("color: white; font-size: 26px; font-weight: bold;")
-        sub = QLabel("Configura directrices avanzadas con prioridades y extensiones para el ordenamiento automatizado."); sub.setStyleSheet("color: #666; font-size: 14px;")
+        tit = QLabel("Fase 2: Gestor de Reglas por Carpeta"); tit.setStyleSheet("color: white; font-size: 26px; font-weight: bold;")
+        sub = QLabel("Asigne extensiones, prioridades y estados de activación a sus carpetas de destino monitoreadas."); sub.setStyleSheet("color: #666; font-size: 14px;")
         head.addWidget(tit)
         head.addWidget(sub)
         layout_principal.addLayout(head)
 
-        # Zona Central Dividida en Formulario (Izquierda) y Tabla de Reglas Existentes (Derecha)
+        # Contenedores horizontales distribuidos
         split_layout = QHBoxLayout()
         split_layout.setSpacing(20)
 
+        # Estilos compartidos de tu diseño
+        estilo_frame = "background: #181818; border-radius: 10px; border: 1px solid #222; padding: 15px;"
+        estilo_input = "background: #121212; color: white; padding: 8px; border: 1px solid #333; border-radius: 5px;"
+        estilo_tabla = """
+            QTableWidget { background-color: #121212; color: white; gridline-color: #222; border: none; border-radius: 5px; }
+            QHeaderView::section { background-color: #181818; color: #aaaaaa; font-weight: bold; border: 1px solid #222; padding: 6px; }
+            QTableWidget::item { padding: 5px; }
+            QTableWidget::item:selected { background-color: #eab308; color: black; }
+        """
+
         # =========================================================================
-        # FORMULARIO DE REGISTRO (IZQUIERDA)
+        # PANEL IZQUIERDO: CRUD Y PARÁMETROS DE LA REGLA
         # =========================================================================
-        grupo_config = QGroupBox("Nueva Regla Normativa")
-        grupo_config.setFixedWidth(380)
+        grupo_config = QGroupBox("Configurar Parámetros")
+        grupo_config.setFixedWidth(400)
         grupo_config.setStyleSheet("""
             QGroupBox { color: white; font-weight: bold; border: 1px solid #222; border-radius: 10px; margin-top: 10px; padding: 15px; background: #121212; }
             QLabel { color: #aaaaaa; font-size: 13px; }
@@ -44,159 +54,210 @@ class VistaReglasOrganizacion(QWidget):
         layout_form = QFormLayout(grupo_config)
         layout_form.setSpacing(12)
 
-        # Inputs del Formulario basados en la estructura SQL
-        self.input_nombre = QLineEdit()
-        self.input_nombre.setPlaceholderText("Ej: Planillas UNELLEZ")
-        self.input_nombre.setStyleSheet("background: #181818; color: white; padding: 8px; border: 1px solid #333; border-radius: 5px;")
+        # Selector Dinámico de Carpeta Destino (Carga datos de la Fase 1)
+        self.combo_carpetas = QComboBox()
+        self.combo_carpetas.setStyleSheet(estilo_input)
+        # Al cambiar la carpeta seleccionada, se actualiza automáticamente la tabla de reglas
+        self.combo_carpetas.currentTextChanged.connect(self.cargar_reglas_por_carpeta)
+
+        self.input_nombre_regla = QLineEdit()
+        self.input_nombre_regla.setPlaceholderText("Ej: Filtro de Videos")
+        self.input_nombre_regla.setStyleSheet(estilo_input)
 
         self.input_extension = QLineEdit()
-        self.input_extension.setPlaceholderText("Ej: pdf (o dejar vacío para cualquiera)")
-        self.input_extension.setStyleSheet("background: #181818; color: white; padding: 8px; border: 1px solid #333; border-radius: 5px;")
-
-        self.combo_destino = QComboBox()
-        self.combo_destino.addItems(["universidad", "mis proyectos", "respaldos", "documentos", "fotos", "descargas"])
-        self.combo_destino.setStyleSheet("background: #181818; color: white; padding: 8px; border: 1px solid #333; border-radius: 5px;")
+        self.input_extension.setPlaceholderText("Ej: .mp4 o mp4 (vacío para cualquier extensión)")
+        self.input_extension.setStyleSheet(estilo_input)
 
         self.spin_prioridad = QSpinBox()
         self.spin_prioridad.setRange(0, 100)
         self.spin_prioridad.setValue(0)
-        self.spin_prioridad.setStyleSheet("background: #181818; color: white; padding: 6px; border: 1px solid #333; border-radius: 5px;")
+        self.spin_prioridad.setStyleSheet("background: #121212; color: white; padding: 6px; border: 1px solid #333; border-radius: 5px;")
 
-        self.check_activa = QCheckBox(" Regla Habilitada / Activa")
+        self.check_activa = QCheckBox(" Regla Activa / Habilitada")
         self.check_activa.setChecked(True)
         self.check_activa.setStyleSheet("color: #aaaaaa; font-size: 13px; padding-top: 5px;")
 
-        layout_form.addRow("Nombre Regla:", self.input_nombre)
-        layout_form.addRow("Extensión:", self.input_extension)
-        layout_form.addRow("Carpeta Destino:", self.combo_destino)
-        layout_form.addRow("Prioridad Ord:", self.spin_prioridad)
+        layout_form.addRow("Carpeta Objetivo:", self.combo_carpetas)
+        layout_form.addRow("Nombre de Regla:", self.input_nombre_regla)
+        layout_form.addRow("Extensión Permitida:", self.input_extension)
+        layout_form.addRow("Prioridad Ejecución:", self.spin_prioridad)
         layout_form.addRow("", self.check_activa)
 
-        # Botón Guardar (Estilo Amarillo de tu App)
-        btn_guardar = QPushButton("GUARDAR REGLA")
-        btn_guardar.setStyleSheet("""
-            QPushButton { background: #eab308; color: white; font-weight: bold; padding: 12px; border-radius: 5px; border: none; margin-top: 10px; }
-            QPushButton:hover { background: #d4a017; }
-        """)
-        btn_guardar.clicked.connect(self.guardar_regla)
-        layout_form.addRow("", btn_guardar)
-        
+        # Botón Agregar Regla (Estilo Amarillo)
+        btn_agregar_regla = QPushButton("AGREGAR REGLA")
+        btn_agregar_regla.setStyleSheet("QPushButton { background: #eab308; color: white; font-weight: bold; padding: 12px; border-radius: 5px; border: none; margin-top: 5px; } QPushButton:hover { background: #d4a017; }")
+        btn_agregar_regla.clicked.connect(self.agregar_nueva_regla)
+        layout_form.addRow("", btn_agregar_regla)
+
         split_layout.addWidget(grupo_config)
 
         # =========================================================================
-        # TABLA DE VISUALIZACIÓN DE REGLAS (DERECHA)
+        # PANEL DERECHO: LISTA Y ELIMINACIÓN DE REGLAS ACTIVAS
         # =========================================================================
-        tabla_frame = QFrame()
-        tabla_frame.setStyleSheet("background: #181818; border-radius: 10px; border: 1px solid #222; padding: 10px;")
-        tabla_layout = QVBoxLayout(tabla_frame)
-        
-        lbl_tabla_tit = QLabel("Reglas Activas en el Sistema"); lbl_tabla_tit.setStyleSheet("color: white; font-weight: bold; font-size: 14px; margin-bottom: 5px;")
-        tabla_layout.addWidget(lbl_tabla_tit)
+        frame_tabla = QFrame()
+        frame_tabla.setStyleSheet(estilo_frame)
+        layout_tabla = QVBoxLayout(frame_tabla)
 
+        lbl_tabla_tit = QLabel("📋 Reglas Asociadas a esta Carpeta"); lbl_tabla_tit.setStyleSheet("color: white; font-weight: bold; font-size: 15px; margin-bottom: 5px;")
+        layout_tabla.addWidget(lbl_tabla_tit)
+
+        # Tabla de visualización del CRUD
         self.tabla_reglas = QTableWidget()
         self.tabla_reglas.setColumnCount(5)
-        self.tabla_reglas.setHorizontalHeaderLabels(["Nombre", "Ext", "Destino", "Prioridad", "Estado"])
-        self.tabla_reglas.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.tabla_reglas.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.tabla_reglas.setHorizontalHeaderLabels(["ID", "Nombre", "Extensión", "Prioridad", "Estado"])
+        self.tabla_reglas.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.tabla_reglas.setSelectionBehavior(QTableWidget.SelectRows)
-        self.tabla_reglas.setStyleSheet("""
-            QTableWidget { background-color: #121212; color: white; gridline-color: #222; border: none; border-radius: 5px; }
-            QHeaderView::section { background-color: #181818; color: #aaaaaa; font-weight: bold; border: 1px solid #222; padding: 6px; }
-            QTableWidget::item { padding: 5px; }
-            QTableWidget::item:selected { background-color: #eab308; color: black; }
-        """)
-        tabla_layout.addWidget(self.tabla_reglas)
-        
-        split_layout.addWidget(tabla_frame, 1)
+        self.tabla_reglas.setStyleSheet(estilo_tabla)
+        layout_tabla.addWidget(self.tabla_reglas)
+
+        # Botón Eliminar Regla (Estilo Rojo)
+        btn_eliminar_regla = QPushButton("ELIMINAR REGLA SELECCIONADA")
+        btn_eliminar_regla.setStyleSheet("QPushButton { background: #ef4444; color: white; font-weight: bold; padding: 12px; border-radius: 5px; border: none; } QPushButton:hover { background: #dc2626; }")
+        btn_eliminar_regla.clicked.connect(self.eliminar_regla_seleccionada)
+        layout_tabla.addWidget(btn_eliminar_regla)
+
+        split_layout.addWidget(frame_tabla, 1)
         layout_principal.addLayout(split_layout, 1)
 
-        # Botón inferior para regresar de forma fluida
+        # Botón inferior de retorno
         btn_volver = QPushButton("← VOLVER AL PANEL RESUMEN")
         btn_volver.setFixedWidth(220)
-        btn_volver.setStyleSheet("""
-            QPushButton { background: #222; color: #aaa; font-weight: bold; padding: 10px; border-radius: 5px; border: 1px solid #333; }
-            QPushButton:hover { background: #333; color: white; }
-        """)
+        btn_volver.setStyleSheet("QPushButton { background: #222; color: #aaa; font-weight: bold; padding: 10px; border-radius: 5px; border: 1px solid #333; } QPushButton:hover { background: #333; color: white; }")
         btn_volver.clicked.connect(self.callback_regresar)
         layout_principal.addWidget(btn_volver)
 
-    def guardar_regla(self):
-        """Valida, procesa y manda la regla al Modelo/BD mediante el Controlador"""
-        nombre = self.input_nombre.text().strip()
-        extension = self.input_extension.text().strip().lower().replace(".", "")
-        carpeta = self.combo_destino.currentText().lower()
+    # =========================================================================
+    # CONEXIÓN DIRECTA CON SQLITE (REGLAS DE ORGANIZACIÓN)
+    # =========================================================================
+    def conectar_db(self):
+        import sqlite3
+        conn = sqlite3.connect(str(self.asistente.modelo_org.db_path))
+        cursor = conn.cursor()
+        # Creamos la tabla con la estructura exacta de tu especificación de base de datos
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS reglas_organizacion (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre TEXT NOT NULL,
+                extension TEXT,
+                carpeta_destino TEXT NOT NULL,
+                prioridad INTEGER DEFAULT 0,
+                activa BOOLEAN DEFAULT 1,
+                fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.commit()
+        return conn, cursor
+
+    def actualizar_selector_carpetas(self):
+        """Lee las carpetas destino insertadas en la Fase 1 para poblar el ComboBox"""
+        try:
+            conn, cursor = self.conectar_db()
+            # Asegurar existencia de tabla directorios_destino por seguridad
+            cursor.execute("CREATE TABLE IF NOT EXISTS directorios_destino (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT NOT NULL UNIQUE, ruta TEXT NOT NULL UNIQUE)")
+            cursor.execute("SELECT nombre FROM directorios_destino ORDER BY nombre ASC")
+            carpetas = [fila[0] for fila in cursor.fetchall()]
+            conn.close()
+
+            self.combo_carpetas.blockSignals(True)
+            self.combo_carpetas.clear()
+            if carpetas:
+                self.combo_carpetas.addItems(carpetas)
+            else:
+                self.combo_carpetas.addItem("sin carpetas configuradas")
+            self.combo_carpetas.blockSignals(False)
+            
+            self.cargar_reglas_por_carpeta()
+        except Exception as e:
+            print(f"Error al poblar selector de carpetas: {e}")
+
+    def cargar_reglas_por_carpeta(self):
+        """Hace un SELECT filtrando por la carpeta seleccionada en el ComboBox"""
+        carpeta_actual = self.combo_carpetas.currentText()
+        if not carpeta_actual or carpeta_actual == "sin carpetas configuradas":
+            self.tabla_reglas.setRowCount(0)
+            return
+
+        try:
+            conn, cursor = self.conectar_db()
+            cursor.execute("""
+                SELECT id, nombre, extension, prioridad, activa 
+                FROM reglas_organizacion 
+                WHERE carpeta_destino = ? 
+                ORDER BY prioridad DESC
+            """, (carpeta_actual,))
+            filas = cursor.fetchall()
+            conn.close()
+
+            self.tabla_reglas.setRowCount(0)
+            for idx, fila in enumerate(filas):
+                self.tabla_reglas.insertRow(idx)
+                ext_val = fila[2] if fila[2] else "* (Cualquiera)"
+                estado_val = "🟢 Activa" if fila[4] == 1 else "🔴 Inactiva"
+                
+                self.tabla_reglas.setItem(idx, 0, QTableWidgetItem(str(fila[0])))
+                self.tabla_reglas.setItem(idx, 1, QTableWidgetItem(str(fila[1])))
+                self.tabla_reglas.setItem(idx, 2, QTableWidgetItem(str(ext_val)))
+                self.tabla_reglas.setItem(idx, 3, QTableWidgetItem(str(fila[3])))
+                self.tabla_reglas.setItem(idx, 4, QTableWidgetItem(str(estado_val)))
+        except Exception as e:
+            print(f"Error al mapear reglas de carpeta: {e}")
+
+    def agregar_nueva_regla(self):
+        """Ejecuta el INSERT en la tabla reglas_organizacion"""
+        carpeta = self.combo_carpetas.currentText()
+        nombre = self.input_nombre_regla.text().strip()
+        extension = self.input_extension.text().strip().lower().replace(".", "") # Limpiar puntos extra (.mp4 -> mp4)
         prioridad = self.spin_prioridad.value()
         activa = 1 if self.check_activa.isChecked() else 0
 
+        if not carpeta or carpeta == "sin carpetas configuradas":
+            QMessageBox.warning(self, "Falta Destino", "Primero debe agregar una carpeta destino en la Configuración Global (Fase 1).")
+            return
         if not nombre:
-            QMessageBox.warning(self, "Campos Incompletos", "El campo 'Nombre Regla' es mandatorio.")
+            QMessageBox.warning(self, "Campo Requerido", "Por favor, asigne un nombre identificatorio a la regla.")
             return
 
-        # Mandamos la petición al controlador/modelo.
-        # NOTA: Asegúrate de añadir el método correspondiente en tu clase ModeloOrganizador para insertar esta estructura.
         try:
-            conn = self.asistente.modelo_org._conectar() if hasattr(self.asistente.modelo_org, '_conectar') else None
-            if not conn:
-                import sqlite3
-                conn = sqlite3.connect(str(self.asistente.modelo_org.db_path))
-            
-            cursor = conn.cursor()
+            conn, cursor = self.conectar_db()
             cursor.execute("""
                 INSERT INTO reglas_organizacion (nombre, extension, carpeta_destino, prioridad, activa)
                 VALUES (?, ?, ?, ?, ?)
             """, (nombre, extension if extension else None, carpeta, prioridad, activa))
             conn.commit()
             conn.close()
-            
-            # Limpiar entradas e informar al usuario
-            self.input_nombre.clear()
+
+            # Limpiar entradas del formulario
+            self.input_nombre_regla.clear()
             self.input_extension.clear()
             self.spin_prioridad.setValue(0)
             
-            # Sincronizar UI
-            self.cargar_reglas_en_tabla()
-            if hasattr(self.asistente, 'actualizar_reglas_en_memoria'):
-                self.asistente.actualizar_reglas_en_memoria()
-                
-            QMessageBox.information(self, "Éxito", f"Regla '{nombre}' guardada correctamente.")
+            # Recargar vista de la tabla
+            self.cargar_reglas_por_carpeta()
         except Exception as e:
-            QMessageBox.critical(self, "Error de BD", f"No se pudo guardar la regla: {str(e)}")
+            QMessageBox.critical(self, "Error de Inserción", f"No se pudo guardar la regla: {e}")
 
-    def cargar_reglas_en_tabla(self):
-        """Consulta la base de datos y pinta las reglas guardadas en la tabla derecha"""
+    def eliminar_regla_seleccionada(self):
+        """Ejecuta el DELETE en la tabla usando el ID único del registro"""
+        fila_seleccionada = self.tabla_reglas.currentRow()
+        if fila_seleccionada < 0:
+            QMessageBox.warning(self, "Selección Requerida", "Por favor, elija una regla de la tabla derecha para proceder a su eliminación.")
+            return
+
+        id_regla = self.tabla_reglas.item(fila_seleccionada, 0).text()
+        nombre_regla = self.tabla_reglas.item(fila_seleccionada, 1).text()
+
         try:
-            import sqlite3
-            conn = sqlite3.connect(str(self.asistente.modelo_org.db_path))
-            cursor = conn.cursor()
-            
-            # Asegurar de que la tabla exista antes de consultar
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS reglas_organizacion (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    nombre TEXT NOT NULL,
-                    extension TEXT,
-                    carpeta_destino TEXT NOT NULL,
-                    prioridad INTEGER DEFAULT 0,
-                    activa BOOLEAN DEFAULT 1,
-                    fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
+            conn, cursor = self.conectar_db()
+            cursor.execute("DELETE FROM reglas_organizacion WHERE id = ?", (id_regla,))
             conn.commit()
-            
-            cursor.execute("SELECT nombre, extension, carpeta_destino, prioridad, activa FROM reglas_organizacion ORDER BY prioridad DESC")
-            filas = cursor.fetchall()
             conn.close()
 
-            self.tabla_reglas.setRowCount(0)
-            for i, fila in enumerate(filas):
-                self.tabla_reglas.insertRow(i)
-                ext_val = fila[1] if fila[1] else "* (Todas)"
-                estado_val = "🟢 Activa" if fila[4] == 1 else "🔴 Inactiva"
-                
-                self.tabla_reglas.setItem(i, 0, QTableWidgetItem(str(fila[0])))
-                self.tabla_reglas.setItem(i, 1, QTableWidgetItem(str(ext_val)))
-                self.tabla_reglas.setItem(i, 2, QTableWidgetItem(str(fila[2])))
-                self.tabla_reglas.setItem(i, 3, QTableWidgetItem(str(fila[3])))
-                self.tabla_reglas.setItem(i, 4, QTableWidgetItem(estado_val))
+            self.cargar_reglas_por_carpeta()
+            QMessageBox.information(self, "Eliminado", f"La regla '{nombre_regla}' fue removida del sistema.")
         except Exception as e:
-            print(f"Error al cargar reglas en tabla: {e}")
+            QMessageBox.critical(self, "Error de Eliminación", f"No se pudo eliminar la regla: {e}")
+
+    def showEvent(self, event):
+        """Cada vez que la vista se muestra en pantalla, refresca el combo por si se agregaron nuevos destinos en Fase 1"""
+        self.actualizar_selector_carpetas()
+        super().showEvent(event)
