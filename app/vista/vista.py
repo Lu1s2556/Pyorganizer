@@ -194,7 +194,7 @@ class DashboardOrganizador(QMainWindow):
 
         # Botón para mover archivos ahora (sin depender de watchdog)
         btn_scan_now = QPushButton("Mover ahora (sin watchdog)")
-        btn_scan_now.setStyleSheet("QPushButton { background: #eab308; color: white; font-weight: bold; padding: 8px 12px; border-radius: 5px; } QPushButton:hover { background: #d4a017; }")
+        btn_scan_now.setStyleSheet("QPushButton { background: #eab308; color: white; font-weight: bold; padding: 8px 12px; border-radius: 5px; } QPushButton:hover { background: #c79906; }")
         btn_scan_now.clicked.connect(self.ejecutar_escaneo_asincrono)
         layout.addWidget(btn_scan_now)
 
@@ -260,9 +260,9 @@ class DashboardOrganizador(QMainWindow):
         self.chat_layout = QVBoxLayout(self.chat_win)
         self.chat_layout.setContentsMargins(0,0,0,0)
 
-        self.btn_toggle = QPushButton("🤖 Asistente PyOrganizer")
+        self.btn_toggle = QPushButton("Asistente PyOrganizer")
         self.btn_toggle.setFixedHeight(40)
-        self.btn_toggle.setStyleSheet("QPushButton { background: #eab308; color: white; font-weight: bold; border-top-left-radius: 10px; border-top-right-radius: 10px; border: none; } QPushButton:hover { background: #d4a017; }")
+        self.btn_toggle.setStyleSheet("QPushButton { background: #eab308; color: white; font-weight: bold; border-top-left-radius: 10px; border-top-right-radius: 10px; border: none; } QPushButton:hover { background: #c79906; }")
         self.btn_toggle.clicked.connect(self.toggle_chat)
         self.chat_layout.addWidget(self.btn_toggle)
 

@@ -1,6 +1,7 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                                QLineEdit, QPushButton, QFrame, QTableWidget, 
                                QTableWidgetItem, QHeaderView, QMessageBox, QFileDialog)
+from PySide6.QtGui import QFont
 from PySide6.QtCore import Qt
 
 class VistaConfiguracionGlobal(QWidget):
@@ -37,7 +38,7 @@ class VistaConfiguracionGlobal(QWidget):
             QTableWidget::item:selected { background-color: #eab308; color: black; }
         """
         estilo_input = "background: #121212; color: white; padding: 8px; border: 1px solid #333; border-radius: 5px;"
-        estilo_btn_amarillo = "QPushButton { background: #eab308; color: white; font-weight: bold; padding: 8px 15px; border-radius: 5px; border: none; } QPushButton:hover { background: #d4a017; }"
+        estilo_btn_amarillo = "QPushButton { background: #eab308; color: white; font-weight: bold; padding: 8px 15px; border-radius: 5px; border: none; } QPushButton:hover { background: #c79906; }"
         estilo_btn_rojo = "QPushButton { background: #ef4444; color: white; font-weight: bold; padding: 8px 15px; border-radius: 5px; border: none; } QPushButton:hover { background: #dc2626; }"
 
         # Secciones divididas en dos columnas (Orígenes a la izquierda, Destinos a la derecha)
@@ -84,6 +85,13 @@ class VistaConfiguracionGlobal(QWidget):
         self.tabla_origenes.setHorizontalHeaderLabels(["ID", "Ruta de Entrada"])
         self.tabla_origenes.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.tabla_origenes.setSelectionBehavior(QTableWidget.SelectRows)
+        # Estética y legibilidad de la tabla
+        fuente_tabla = QFont("Segoe UI", 11)
+        self.tabla_origenes.setFont(fuente_tabla)
+        self.tabla_origenes.setAlternatingRowColors(True)
+        self.tabla_origenes.setShowGrid(False)
+        self.tabla_origenes.setWordWrap(False)
+        self.tabla_origenes.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.tabla_origenes.setStyleSheet(estilo_tabla)
         layout_origen.addWidget(self.tabla_origenes)
 
@@ -134,6 +142,11 @@ class VistaConfiguracionGlobal(QWidget):
         self.tabla_destinos = QTableWidget()
         self.tabla_destinos.setColumnCount(3)
         self.tabla_destinos.setHorizontalHeaderLabels(["ID", "Alias / Nombre", "Ruta de Salida"])
+        # Estética y legibilidad de la tabla
+        self.tabla_destinos.setFont(fuente_tabla)
+        self.tabla_destinos.setAlternatingRowColors(True)
+        self.tabla_destinos.setShowGrid(False)
+        self.tabla_destinos.setWordWrap(False)
         self.tabla_destinos.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
         self.tabla_destinos.setSelectionBehavior(QTableWidget.SelectRows)
         self.tabla_destinos.setStyleSheet(estilo_tabla)

@@ -2,6 +2,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                                QLineEdit, QPushButton, QFrame, QFormLayout, 
                                QGroupBox, QComboBox, QSpinBox, QCheckBox, 
                                QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox)
+from PySide6.QtGui import QFont
 from PySide6.QtCore import Qt
 
 # Catálogo estático de extensiones categorizadas
@@ -50,6 +51,12 @@ class VistaReglasOrganizacion(QWidget):
             QTableWidget::item { padding: 5px; }
             QTableWidget::item:selected { background-color: #eab308; color: black; }
         """
+        # Estilo específico para combo (hover amarillo tenue)
+        estilo_combo = """
+            QComboBox { background: #121212; color: white; padding: 6px; border: 1px solid #333; border-radius: 5px; }
+            QComboBox:hover { border: 1px solid #eab308; background-color: #eab308; color: black; }
+            QComboBox::drop-down:hover { background-color: #eab308; }
+        """
 
         # =========================================================================
         # PANEL IZQUIERDO: CRUD Y PARÁMETROS DE LA REGLA
@@ -65,7 +72,8 @@ class VistaReglasOrganizacion(QWidget):
 
         # Selector Dinámico de Carpeta Destino (Carga datos de la Fase 1)
         self.combo_carpetas = QComboBox()
-        self.combo_carpetas.setStyleSheet(estilo_input)
+        # Aplicar estilo de inputs y hover amarillo
+        self.combo_carpetas.setStyleSheet(estilo_input + estilo_combo)
         # Al cambiar la carpeta seleccionada, se actualiza automáticamente la tabla de reglas
         self.combo_carpetas.currentTextChanged.connect(self.cargar_reglas_por_carpeta)
 
@@ -75,7 +83,7 @@ class VistaReglasOrganizacion(QWidget):
 
         # Combo de extensiones categorizadas (evita errores tipográficos)
         self.combo_extension = QComboBox()
-        self.combo_extension.setStyleSheet(estilo_input)
+        self.combo_extension.setStyleSheet(estilo_input + estilo_combo)
         self.combo_extension.setEditable(False)
         # Primera opción: cualquiera
         self.combo_extension.addItem("* (Cualquiera)", None)
@@ -106,7 +114,7 @@ class VistaReglasOrganizacion(QWidget):
 
         # Botón Agregar Regla (Estilo Amarillo)
         btn_agregar_regla = QPushButton("AGREGAR REGLA")
-        btn_agregar_regla.setStyleSheet("QPushButton { background: #eab308; color: white; font-weight: bold; padding: 12px; border-radius: 5px; border: none; margin-top: 5px; } QPushButton:hover { background: #d4a017; }")
+        btn_agregar_regla.setStyleSheet("QPushButton { background: #eab308; color: white; font-weight: bold; padding: 12px; border-radius: 5px; border: none; margin-top: 5px; } QPushButton:hover { background: #c79906; }")
         btn_agregar_regla.clicked.connect(self.agregar_nueva_regla)
         layout_form.addRow("", btn_agregar_regla)
 
@@ -126,6 +134,12 @@ class VistaReglasOrganizacion(QWidget):
         self.tabla_reglas = QTableWidget()
         self.tabla_reglas.setColumnCount(4)
         self.tabla_reglas.setHorizontalHeaderLabels(["ID", "Nombre", "Extensión", "Estado"])
+        # Mejoras de legibilidad
+        fuente_tabla = QFont("Segoe UI", 11)
+        self.tabla_reglas.setFont(fuente_tabla)
+        self.tabla_reglas.setAlternatingRowColors(True)
+        self.tabla_reglas.setShowGrid(False)
+        self.tabla_reglas.setWordWrap(False)
         self.tabla_reglas.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.tabla_reglas.setSelectionBehavior(QTableWidget.SelectRows)
         self.tabla_reglas.setEditTriggers(QTableWidget.DoubleClicked | QTableWidget.SelectedClicked | QTableWidget.EditKeyPressed)
