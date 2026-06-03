@@ -1,8 +1,12 @@
 import os
 import sqlite3
+import threading
+from PySide6.QtCore import QObject, Signal, Slot
 from PySide6.QtCore import QThread, Signal
 from watchdog.observers import Observer
 from app.watcher_worker import WatcherWorker
+from pathlib import Path
+import traceback
 
 
 class WatcherThread(QThread):
@@ -96,3 +100,19 @@ class WatcherThread(QThread):
         # Create a fresh observer by restarting the thread
         if not self.isRunning():
             self.start()
+    def run(self):
+        try:
+            self._observer = Observer()
+            # ... (todo el código original del try) ...
+
+        except Exception as e:
+            # === NUEVO BLOQUE DE DEPURACIÓN ===
+            print("\n" + "="*50)
+            print("🔍 RASTREO DEL ERROR FANTASMA:")
+            print(traceback.format_exc())
+            print("="*50 + "\n")
+            
+            try:
+                self.error.emit(str(e))
+            except Exception:
+                pass

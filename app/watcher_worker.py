@@ -1,11 +1,15 @@
+import os
+import time
+import threading
+from pathlib import Path
 from PySide6.QtCore import QObject, Signal, Slot
 from .watchdog_handler import WatchdogHandler
 from .file_waiter import wait_for_file_ready
-import threading
-import os
 from app.controlador.controlador_asistente import AsistenteVigiData
 from app.core.motor_organizador import MotorOrganizadorCore
-
+print("DEBUG: Cargando watcher_worker.py...")
+from pathlib import Path
+print(f"DEBUG: Path es: {type(Path)}")
 
 class WatcherWorker(QObject):
     """Conecta el WatchdogHandler con la lógica de espera (Fase 2).
@@ -34,9 +38,27 @@ class WatcherWorker(QObject):
         t.start()
 
     def _wait_and_emit(self, path: str):
+        # Ignorar extensiones temporales comunes inmediatamente
+        lower = path.lower()
+        if lower.endswith('.crdownload') or lower.endswith('.part') or lower.endswith('.tmp'):
+            try:
+                print(f"[watcher_worker] ignoring temporary file: {path}")
+            except Exception:
+                pass
+            return
+
         # Esperar hasta que el archivo esté listo (timeout opcional)
+        try:
+            print(f"[watcher_worker] waiting for file ready: {path}")
+        except Exception:
+            pass
+
         ready = wait_for_file_ready(path, timeout=300, poll_interval=1.0)
         if ready:
+            try:
+                print(f"[watcher_worker] file ready: {path}")
+            except Exception:
+                pass
             # Emitir y además procesar regla/movimiento si hay DB configurada
             self.file_ready.emit(path)
             try:

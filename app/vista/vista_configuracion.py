@@ -162,10 +162,14 @@ class VistaConfiguracionGlobal(QWidget):
         conn = sqlite3.connect(str(self.asistente.modelo_org.db_path))
         cursor = conn.cursor()
         # Verificar la existencia de las tablas asociadas a la Fase 1
+        # Usamos 'carpetas_monitoreadas' para mantener compatibilidad con el motor/watcher
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS directorios_origen (
+            CREATE TABLE IF NOT EXISTS carpetas_monitoreadas (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                ruta TEXT NOT NULL UNIQUE
+                ruta TEXT NOT NULL UNIQUE,
+                nombre_alias TEXT,
+                activa BOOLEAN DEFAULT 1,
+                fecha_agregada DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
         cursor.execute("""
@@ -181,7 +185,7 @@ class VistaConfiguracionGlobal(QWidget):
     def cargar_origenes(self):
         try:
             conn, cursor = self.conectar_db()
-            cursor.execute("SELECT id, ruta FROM directorios_origen")
+            cursor.execute("SELECT id, ruta FROM carpetas_monitoreadas WHERE activa = 1")
             filas = cursor.fetchall()
             conn.close()
 
@@ -200,7 +204,7 @@ class VistaConfiguracionGlobal(QWidget):
             return
         try:
             conn, cursor = self.conectar_db()
-            cursor.execute("INSERT INTO directorios_origen (ruta) VALUES (?)", (ruta,))
+            cursor.execute("INSERT OR IGNORE INTO carpetas_monitoreadas (ruta, nombre_alias, activa) VALUES (?, ?, 1)", (ruta, None))
             conn.commit()
             conn.close()
             self.input_ruta_origen.clear()
@@ -216,7 +220,8 @@ class VistaConfiguracionGlobal(QWidget):
         id_registro = self.tabla_origenes.item(fila_seleccionada, 0).text()
         try:
             conn, cursor = self.conectar_db()
-            cursor.execute("DELETE FROM directorios_origen WHERE id = ?", (id_registro,))
+            # En lugar de borrar, marcamos como inactiva por seguridad
+            cursor.execute("UPDATE carpetas_monitoreadas SET activa = 0 WHERE id = ?", (id_registro,))
             conn.commit()
             conn.close()
             self.cargar_origenes()

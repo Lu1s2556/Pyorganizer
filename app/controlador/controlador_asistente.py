@@ -2,6 +2,7 @@ import fasttext
 import os
 import shutil
 import re
+import time
 from pathlib import Path
 from difflib import get_close_matches
 from PySide6.QtCore import QObject, Signal
@@ -197,6 +198,53 @@ class AsistenteVigiData(QObject):
         except Exception as e:
             return f"❌ Error al crear la carpeta: {str(e)}"
 
+    def esperar_archivo_libre(self, ruta_archivo, timeout=60):
+        """Espera a que el sistema operativo libere el archivo."""
+        ruta = Path(ruta_archivo)
+        inicio = time.time()
+
+        while time.time() - inicio < timeout:
+            if not ruta.exists():
+                return False
+            try:
+                # Intentamos renombrarlo a sí mismo. Si está en uso, esto fallará.
+                ruta.rename(ruta)
+                return True
+            except PermissionError:
+                time.sleep(1)
+            except Exception:
+                time.sleep(0.5)
+        return False
+
+    def procesar_archivo_nuevo(self, ruta_absoluta):
+        """Método conectado a la señal 'file_detected' de Watchdog."""
+        ruta = Path(ruta_absoluta)
+        if not ruta.exists():
+            return
+
+        # Consultar reglas desde el core para determinar destino
+        try:
+            from app.core.motor_organizador import MotorOrganizadorCore
+            core = MotorOrganizadorCore(self.modelo_org.db_path)
+            origenes, destinos, reglas = core.obtener_configuracion()
+        except Exception:
+            return
+
+        extension = ruta.suffix.lower().lstrip('.')
+        destino_encontrado = None
+        for regla in reglas:
+            if regla.get('extension') == extension:
+                destino_encontrado = regla.get('destino_alias')
+                break
+
+        if destino_encontrado and destino_encontrado in destinos:
+            carpeta_origen = ruta.parent
+            destino_dir = destinos[destino_encontrado]
+            try:
+                self._move_and_register(ruta, destino_dir, carpeta_origen)
+            except Exception:
+                pass
+
     def ejecutar_movimiento_inteligente(self, origen, ruta_destino):
         """
         Analiza dinámicamente si el origen solicitado corresponde a una extensión pura,
@@ -257,10 +305,26 @@ class AsistenteVigiData(QObject):
     def _move_and_register(self, item, destino_dir: Path, carpeta: Path) -> bool:
         """Mueve un archivo físicamente, registra en la BD y emite señal global."""
         try:
+            # Asegurar que destino_dir es Path y existe (previene que shutil.move renombre el archivo)
+            destino_dir = Path(destino_dir)
+            destino_dir.mkdir(parents=True, exist_ok=True)
+
+            # Aceptar item como Path o str
+            from pathlib import Path as _P
+            if not isinstance(item, _P):
+                item = _P(str(item))
+
             ruta_final = destino_dir / item.name
             tamano_archivo = item.stat().st_size
 
-            # Manejo simple de colisiones
+            # Esperar a que el archivo esté libre antes de moverlo
+            try:
+                if not self.esperar_archivo_libre(item, timeout=300):
+                    return False
+            except Exception:
+                pass
+
+            # Manejo de colisiones
             if ruta_final.exists():
                 nombre_base = item.stem
                 ext = item.suffix.lstrip('.')
@@ -270,6 +334,11 @@ class AsistenteVigiData(QObject):
                     contador += 1
 
             shutil.move(str(item), str(ruta_final))
+
+            try:
+                print(f"[asistente] moved {item.name} -> {ruta_final}")
+            except Exception:
+                pass
 
             # Registro histórico
             try:

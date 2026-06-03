@@ -40,8 +40,14 @@ class WatchdogHandler(FileSystemEventHandler, QObject):
     def _emit_if_valid(self, path: str):
         try:
             if not self._should_ignore(path):
+                # Log de detección y emisión
+                abs_path = os.path.abspath(path)
+                try:
+                    print(f"[watchdog_handler] detected: {abs_path}")
+                except Exception:
+                    pass
                 # Solo emitir la ruta; la lógica de espera/movimiento corresponde al motor
-                self.file_detected.emit(os.path.abspath(path))
+                self.file_detected.emit(abs_path)
         except Exception:
             # Protegemos el manejador de errores para no detener el observer
             pass

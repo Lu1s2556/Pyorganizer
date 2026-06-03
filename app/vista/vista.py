@@ -5,10 +5,11 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QStackedWidget)
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QColor, QFont
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QThread, Signal, QTimer
 from app.services import get_total_movidos, get_total_reglas
 from app.signals import app_signals
 from app.core.motor_organizador import MotorOrganizadorCore
+from pathlib import Path
 # Importaciones de controladores y sub-vistas modulares
 from app.controlador.controlador_asistente import AsistenteVigiData
 from app.vista.vista_reglas import VistaReglasOrganizacion
@@ -89,7 +90,20 @@ class DashboardOrganizador(QMainWindow):
                 self.watchdog._worker.move_result.connect(self._on_move_result)
             except Exception:
                 pass
+            try:
+                # Conectar la señal que indica que el archivo está listo para procesar
+                self.watchdog._worker.file_ready.connect(self.asistente.procesar_archivo_nuevo)
+            except Exception:
+                pass
             self.watchdog.start()
+        except Exception:
+            pass
+
+        # Timer de escaneo silencioso (Fase 4) — escanea cada 10 minutos
+        try:
+            self.timer_escaneo = QTimer(self)
+            self.timer_escaneo.timeout.connect(self.ejecutar_escaneo_silencioso)
+            self.timer_escaneo.start(600000)
         except Exception:
             pass
 
@@ -177,6 +191,12 @@ class DashboardOrganizador(QMainWindow):
         sub = QLabel(""); sub.setStyleSheet("color: #666; font-size: 14px;")
         head.addWidget(tit); head.addWidget(sub)
         layout.addLayout(head)
+
+        # Botón para mover archivos ahora (sin depender de watchdog)
+        btn_scan_now = QPushButton("Mover ahora (sin watchdog)")
+        btn_scan_now.setStyleSheet("QPushButton { background: #eab308; color: white; font-weight: bold; padding: 8px 12px; border-radius: 5px; } QPushButton:hover { background: #d4a017; }")
+        btn_scan_now.clicked.connect(self.ejecutar_escaneo_asincrono)
+        layout.addWidget(btn_scan_now)
 
         grid = QGridLayout()
         try:
@@ -439,6 +459,18 @@ class DashboardOrganizador(QMainWindow):
 
         # Iniciar hilo
         self.hilo_trabajo.start()
+
+    def ejecutar_escaneo_silencioso(self):
+        """Lee las carpetas monitoreadas y ejecuta el motor para mover archivos según reglas."""
+        try:
+            motor = MotorOrganizadorCore(self.asistente.modelo_org.db_path)
+            # Ejecutar en hilo para no bloquear UI
+            self.hilo_trabajo = HiloOrganizador(motor)
+            self.hilo_trabajo.progreso_senal.connect(lambda msg: None)
+            self.hilo_trabajo.finalizado_senal.connect(lambda total: None)
+            self.hilo_trabajo.start()
+        except Exception:
+            pass
 
     def registrar_accion_en_interfaz(self, mensaje):
         """Agrega los movimientos en tiempo real en tu contenedor de Últimas Acciones Inteligentes"""
