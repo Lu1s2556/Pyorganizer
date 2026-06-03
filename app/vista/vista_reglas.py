@@ -4,6 +4,15 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                                QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox)
 from PySide6.QtCore import Qt
 
+# Catálogo estático de extensiones categorizadas
+EXT_CATALOG = {
+    "Documentos": [".pdf", ".docx", ".doc", ".xls", ".xlsx", ".txt"],
+    "Imágenes": [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"],
+    "Video": [".mp4", ".mkv", ".avi", ".mov"],
+    "Audio": [".mp3", ".wav", ".flac"],
+    "Desarrollo": [".py", ".js", ".java", ".cpp", ".c", ".cs"],
+}
+
 class VistaReglasOrganizacion(QWidget):
     def __init__(self, asistente, callback_regresar, parent=None):
         super().__init__(parent)
@@ -64,14 +73,26 @@ class VistaReglasOrganizacion(QWidget):
         self.input_nombre_regla.setPlaceholderText("Ej: Filtro de Videos")
         self.input_nombre_regla.setStyleSheet(estilo_input)
 
-        self.input_extension = QLineEdit()
-        self.input_extension.setPlaceholderText("Ej: .mp4 o mp4 (vacío para cualquier extensión)")
-        self.input_extension.setStyleSheet(estilo_input)
+        # Combo de extensiones categorizadas (evita errores tipográficos)
+        self.combo_extension = QComboBox()
+        self.combo_extension.setStyleSheet(estilo_input)
+        self.combo_extension.setEditable(False)
+        # Primera opción: cualquiera
+        self.combo_extension.addItem("* (Cualquiera)", None)
+        for cat, exts in EXT_CATALOG.items():
+            # agregar un separador visual
+            self.combo_extension.addItem(f"--- {cat} ---")
+            idx = self.combo_extension.count() - 1
+            self.combo_extension.model().item(idx).setEnabled(False)
+            for ext in exts:
+                display = f"{cat}: {ext}"
+                self.combo_extension.addItem(display, ext)
 
+        # prioridad removida en la nueva fase; mantenemos el campo oculto si se necesita
         self.spin_prioridad = QSpinBox()
         self.spin_prioridad.setRange(0, 100)
         self.spin_prioridad.setValue(0)
-        self.spin_prioridad.setStyleSheet("background: #121212; color: white; padding: 6px; border: 1px solid #333; border-radius: 5px;")
+        self.spin_prioridad.setVisible(False)
 
         self.check_activa = QCheckBox(" Regla Activa / Habilitada")
         self.check_activa.setChecked(True)
@@ -79,8 +100,8 @@ class VistaReglasOrganizacion(QWidget):
 
         layout_form.addRow("Carpeta Objetivo:", self.combo_carpetas)
         layout_form.addRow("Nombre de Regla:", self.input_nombre_regla)
-        layout_form.addRow("Extensión Permitida:", self.input_extension)
-        layout_form.addRow("Prioridad Ejecución:", self.spin_prioridad)
+        layout_form.addRow("Extensión Permitida:", self.combo_extension)
+        layout_form.addRow("", self.spin_prioridad)
         layout_form.addRow("", self.check_activa)
 
         # Botón Agregar Regla (Estilo Amarillo)
@@ -103,10 +124,13 @@ class VistaReglasOrganizacion(QWidget):
 
         # Tabla de visualización del CRUD
         self.tabla_reglas = QTableWidget()
-        self.tabla_reglas.setColumnCount(5)
-        self.tabla_reglas.setHorizontalHeaderLabels(["ID", "Nombre", "Extensión", "Prioridad", "Estado"])
+        self.tabla_reglas.setColumnCount(4)
+        self.tabla_reglas.setHorizontalHeaderLabels(["ID", "Nombre", "Extensión", "Estado"])
         self.tabla_reglas.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.tabla_reglas.setSelectionBehavior(QTableWidget.SelectRows)
+        self.tabla_reglas.setEditTriggers(QTableWidget.DoubleClicked | QTableWidget.SelectedClicked | QTableWidget.EditKeyPressed)
+        # Señal para manejar cambios en celdas (persistir UPDATE)
+        self.tabla_reglas.itemChanged.connect(self._on_regla_item_changed)
         self.tabla_reglas.setStyleSheet(estilo_tabla)
         layout_tabla.addWidget(self.tabla_reglas)
 
@@ -140,7 +164,6 @@ class VistaReglasOrganizacion(QWidget):
                 nombre TEXT NOT NULL,
                 extension TEXT,
                 carpeta_destino TEXT NOT NULL,
-                prioridad INTEGER DEFAULT 0,
                 activa BOOLEAN DEFAULT 1,
                 fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP
             )
@@ -153,9 +176,22 @@ class VistaReglasOrganizacion(QWidget):
         try:
             conn, cursor = self.conectar_db()
             # Asegurar existencia de tabla directorios_destino por seguridad
-            cursor.execute("CREATE TABLE IF NOT EXISTS directorios_destino (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT NOT NULL UNIQUE, ruta TEXT NOT NULL UNIQUE)")
-            cursor.execute("SELECT nombre FROM directorios_destino ORDER BY nombre ASC")
-            carpetas = [fila[0] for fila in cursor.fetchall()]
+            cursor.execute("CREATE TABLE IF NOT EXISTS directorios_destino (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre_alias TEXT, nombre TEXT, ruta TEXT NOT NULL UNIQUE)")
+            # Intentar usar nombre_alias, si no existe (DB antigua), usar nombre
+            try:
+                cursor.execute("SELECT nombre_alias FROM directorios_destino ORDER BY nombre_alias ASC")
+                carpetas = [fila[0] for fila in cursor.fetchall() if fila[0]]
+                if not carpetas:
+                    # intentar columna 'nombre'
+                    cursor.execute("SELECT nombre FROM directorios_destino ORDER BY nombre ASC")
+                    carpetas = [fila[0] for fila in cursor.fetchall() if fila[0]]
+            except Exception:
+                # Fallback: intentar seleccionar 'nombre'
+                try:
+                    cursor.execute("SELECT nombre FROM directorios_destino ORDER BY nombre ASC")
+                    carpetas = [fila[0] for fila in cursor.fetchall()]
+                except Exception:
+                    carpetas = []
             conn.close()
 
             self.combo_carpetas.blockSignals(True)
@@ -180,10 +216,10 @@ class VistaReglasOrganizacion(QWidget):
         try:
             conn, cursor = self.conectar_db()
             cursor.execute("""
-                SELECT id, nombre, extension, prioridad, activa 
+                SELECT id, nombre, extension, activa 
                 FROM reglas_organizacion 
                 WHERE carpeta_destino = ? 
-                ORDER BY prioridad DESC
+                ORDER BY fecha_creacion DESC
             """, (carpeta_actual,))
             filas = cursor.fetchall()
             conn.close()
@@ -192,13 +228,20 @@ class VistaReglasOrganizacion(QWidget):
             for idx, fila in enumerate(filas):
                 self.tabla_reglas.insertRow(idx)
                 ext_val = fila[2] if fila[2] else "* (Cualquiera)"
-                estado_val = "🟢 Activa" if fila[4] == 1 else "🔴 Inactiva"
-                
+                estado_val = "🟢 Activa" if fila[3] == 1 else "🔴 Inactiva"
+
                 self.tabla_reglas.setItem(idx, 0, QTableWidgetItem(str(fila[0])))
-                self.tabla_reglas.setItem(idx, 1, QTableWidgetItem(str(fila[1])))
-                self.tabla_reglas.setItem(idx, 2, QTableWidgetItem(str(ext_val)))
-                self.tabla_reglas.setItem(idx, 3, QTableWidgetItem(str(fila[3])))
-                self.tabla_reglas.setItem(idx, 4, QTableWidgetItem(str(estado_val)))
+                item_nombre = QTableWidgetItem(str(fila[1]))
+                item_nombre.setFlags(item_nombre.flags() | Qt.ItemIsEditable)
+                self.tabla_reglas.setItem(idx, 1, item_nombre)
+
+                item_ext = QTableWidgetItem(str(ext_val))
+                item_ext.setFlags(item_ext.flags() | Qt.ItemIsEditable)
+                self.tabla_reglas.setItem(idx, 2, item_ext)
+
+                item_estado = QTableWidgetItem(str(estado_val))
+                item_estado.setFlags(item_estado.flags() | Qt.ItemIsEditable)
+                self.tabla_reglas.setItem(idx, 3, item_estado)
         except Exception as e:
             print(f"Error al mapear reglas de carpeta: {e}")
 
@@ -206,7 +249,9 @@ class VistaReglasOrganizacion(QWidget):
         """Ejecuta el INSERT en la tabla reglas_organizacion"""
         carpeta = self.combo_carpetas.currentText()
         nombre = self.input_nombre_regla.text().strip()
-        extension = self.input_extension.text().strip().lower().replace(".", "") # Limpiar puntos extra (.mp4 -> mp4)
+        # Obtener extensión seleccionada desde el combo (userData)
+        ext_data = self.combo_extension.currentData()
+        extension = ext_data.strip().lower().replace(".", "") if ext_data else None
         prioridad = self.spin_prioridad.value()
         activa = 1 if self.check_activa.isChecked() else 0
 
@@ -220,15 +265,18 @@ class VistaReglasOrganizacion(QWidget):
         try:
             conn, cursor = self.conectar_db()
             cursor.execute("""
-                INSERT INTO reglas_organizacion (nombre, extension, carpeta_destino, prioridad, activa)
-                VALUES (?, ?, ?, ?, ?)
-            """, (nombre, extension if extension else None, carpeta, prioridad, activa))
+                INSERT INTO reglas_organizacion (nombre, extension, carpeta_destino, activa)
+                VALUES (?, ?, ?, ?)
+            """, (nombre, extension if extension else None, carpeta, activa))
             conn.commit()
             conn.close()
 
             # Limpiar entradas del formulario
             self.input_nombre_regla.clear()
-            self.input_extension.clear()
+            try:
+                self.combo_extension.setCurrentIndex(0)
+            except Exception:
+                pass
             self.spin_prioridad.setValue(0)
             
             # Recargar vista de la tabla
@@ -261,3 +309,48 @@ class VistaReglasOrganizacion(QWidget):
         """Cada vez que la vista se muestra en pantalla, refresca el combo por si se agregaron nuevos destinos en Fase 1"""
         self.actualizar_selector_carpetas()
         super().showEvent(event)
+
+    # ------------------------------------------------------------------
+    # Manejo de edición en la tabla
+    # ------------------------------------------------------------------
+    def _on_regla_item_changed(self, item):
+        # Evitar reaccionar mientras rellenamos la tabla
+        if getattr(self, "_populating_table", False):
+            return
+
+        row = item.row()
+        col = item.column()
+        id_item = self.tabla_reglas.item(row, 0)
+        if not id_item:
+            return
+        id_regla = id_item.text()
+
+        # Mapear columna a campo DB
+        campo = None
+        valor = item.text()
+        if col == 1:
+            campo = 'nombre'
+        elif col == 2:
+            campo = 'extension'
+            # normalizar: permitir '*' o texto vacío -> NULL
+            if valor.strip() in ("* (Cualquiera)", "*"):
+                valor = None
+            else:
+                valor = valor.strip().lstrip('.')
+        elif col == 3:
+            campo = 'activa'
+            valor = 1 if 'Activa' in valor else 0
+
+        if campo is None:
+            return
+
+        try:
+            conn, cursor = self.conectar_db()
+            if valor is None:
+                cursor.execute(f"UPDATE reglas_organizacion SET {campo} = NULL WHERE id = ?", (id_regla,))
+            else:
+                cursor.execute(f"UPDATE reglas_organizacion SET {campo} = ? WHERE id = ?", (valor, id_regla))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            QMessageBox.critical(self, "Error al actualizar", f"No se pudo actualizar la regla: {e}")
