@@ -3,6 +3,95 @@ import shutil
 import sqlite3
 from pathlib import Path
 
+try:
+    from PySide6.QtCore import QThread, Signal
+except Exception:
+    # If PySide6 isn't available in this environment, define fallbacks for linting/tests
+    class QThread:
+        def __init__(self):
+            pass
+    class Signal:
+        def __init__(self, *args, **kwargs):
+            pass
+
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
+
+
+class WatchdogThread(QThread):
+    """Hilo Qt que ejecuta un Observer de watchdog y emite señales cuando se crean archivos."""
+    file_created = Signal(str)
+
+    def __init__(self, db_path):
+        super().__init__()
+        self.db_path = db_path
+        self._observer = None
+        self._running = False
+
+    def run(self):
+        # Cargar rutas origen desde la base de datos
+        origenes = []
+        try:
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+            cursor.execute("SELECT ruta FROM carpetas_monitoreadas WHERE activa = 1")
+            origenes = [row[0] for row in cursor.fetchall()]
+            conn.close()
+        except Exception:
+            origenes = []
+
+        if not origenes:
+            return
+
+        event_handler = _CreatedHandler(self.file_created)
+        self._observer = Observer()
+        for ruta in origenes:
+            if os.path.exists(ruta):
+                try:
+                    self._observer.schedule(event_handler, ruta, recursive=False)
+                except Exception:
+                    pass
+
+        self._observer.start()
+        self._running = True
+        try:
+            while self._running:
+                self.msleep(200)
+        finally:
+            try:
+                self._observer.stop()
+                self._observer.join()
+            except Exception:
+                pass
+
+    def stop(self):
+        self._running = False
+
+
+class _CreatedHandler(FileSystemEventHandler):
+    def __init__(self, qt_signal):
+        super().__init__()
+        self.qt_signal = qt_signal
+
+    def on_created(self, event):
+        # Solo archivos
+        if event.is_directory:
+            return
+        try:
+            path = event.src_path
+            # Emitir la ruta del archivo creado
+            try:
+                self.qt_signal.emit(path)
+            except Exception:
+                # si Signal no es real (entorno de pruebas), intentar llamar como función
+                try:
+                    self.qt_signal(path)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+
 class MotorOrganizadorCore:
     def __init__(self, db_path):
         self.db_path = db_path
@@ -19,19 +108,19 @@ class MotorOrganizadorCore:
         cursor = conn.cursor()
 
         # 1. Obtener carpetas de origen (monitoreadas)
-        cursor.execute("SELECT ruta FROM directorios_origen")
+        cursor.execute("SELECT ruta FROM carpetas_monitoreadas WHERE activa = 1")
         origenes = [Path(fila[0]) for fila in cursor.fetchall() if os.path.exists(fila[0])]
 
         # 2. Obtener mapas de carpetas destino (alias -> ruta_real)
-        cursor.execute("SELECT nombre, ruta FROM directorios_destino")
+        cursor.execute("SELECT nombre_alias, ruta FROM directorios_destino")
         destinos = {fila[0].lower(): Path(fila[1]) for fila in cursor.fetchall()}
 
         # 3. Obtener reglas de organización activas ordenadas por prioridad de mayor a menor
         cursor.execute("""
-            SELECT extension, carpeta_destino, prioridad 
+            SELECT extension, carpeta_destino 
             FROM reglas_organizacion 
             WHERE activa = 1 
-            ORDER BY prioridad DESC
+            ORDER BY fecha_creacion DESC
         """)
         reglas = []
         for fila in cursor.fetchall():
@@ -39,7 +128,6 @@ class MotorOrganizadorCore:
             reglas.append({
                 "extension": ext,
                 "destino_alias": fila[1].lower(),
-                "prioridad": fila[2]
             })
 
         conn.close()
@@ -101,3 +189,9 @@ class MotorOrganizadorCore:
                     callback_progreso(f"Error accediendo a {ruta_origen}: {str(e)}")
 
         return archivos_movidos
+
+    def escanear_ahora(self, callback_progreso=None):
+        """Ejecuta un escaneo inmediato usando la lógica de organización.
+        Retorna la cantidad de archivos movidos.
+        """
+        return self.procesar_organizacion(callback_progreso=callback_progreso)

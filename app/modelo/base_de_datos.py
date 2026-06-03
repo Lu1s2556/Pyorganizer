@@ -104,7 +104,6 @@ class GestorBaseDatos:
                 nombre TEXT NOT NULL,
                 extension TEXT,
                 carpeta_destino TEXT NOT NULL,
-                prioridad INTEGER DEFAULT 0,
                 activa BOOLEAN DEFAULT 1,
                 fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP
             )
@@ -151,9 +150,45 @@ class GestorBaseDatos:
         print("✓ Tablas creadas exitosamente")
         # Después de crear tablas, sembrar datos por defecto si están vacías
         try:
+            # Ejecutar migración para eliminar columna 'prioridad' si existe
+            try:
+                self.migrar_remover_prioridad_reglas()
+            except Exception:
+                pass
             self.sembrar_si_vacia()
         except Exception as e:
             print(f"Error durante el seeding por defecto: {e}")
+
+    def migrar_remover_prioridad_reglas(self):
+        """Realiza migración para eliminar la columna 'prioridad' de reglas_organizacion si existe.
+        Crea una nueva tabla temporal sin la columna, copia datos y reemplaza la original.
+        """
+        self.db.cursor.execute("PRAGMA table_info(reglas_organizacion)")
+        cols = [r['name'] for r in self.db.cursor.fetchall()]
+        if 'prioridad' not in cols:
+            return False
+
+        self.db.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS reglas_organizacion_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre TEXT NOT NULL,
+                extension TEXT,
+                carpeta_destino TEXT NOT NULL,
+                activa BOOLEAN DEFAULT 1,
+                fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        self.db.cursor.execute("""
+            INSERT INTO reglas_organizacion_new (id, nombre, extension, carpeta_destino, activa, fecha_creacion)
+            SELECT id, nombre, extension, carpeta_destino, activa, fecha_creacion FROM reglas_organizacion
+        """)
+
+        self.db.cursor.execute("DROP TABLE IF EXISTS reglas_organizacion")
+        self.db.cursor.execute("ALTER TABLE reglas_organizacion_new RENAME TO reglas_organizacion")
+        self.db.confirmar()
+        print("✓ Migración: columna 'prioridad' removida de reglas_organizacion")
+        return True
 
     def registrar_operacion(self, nombre_archivo, extension, ruta_origen, ruta_destino, tipo_operacion, tamano_bytes=0, usuario='sistema', estado='completado'):
         try:
@@ -262,7 +297,7 @@ class GestorBaseDatos:
         if cnt_origen == 0:
             usuario = os.path.expanduser("~")
             defaults_origen = [
-                (f"{usuario}/Downloads", "descargas"),
+                (f"{usuario}/Downloads", "Origen_Descargas"),
                 (f"{usuario}/Desktop", "escritorio"),
                 (f"{usuario}/Documents", "documentos"),
             ]
@@ -275,7 +310,7 @@ class GestorBaseDatos:
         if cnt_destino == 0:
             defaults_destino = [
                 (os.path.join(os.path.expanduser("~"), "Imágenes"), "Imágenes"),
-                (os.path.join(os.path.expanduser("~"), "Documentos"), "Documentos"),
+                (os.path.join(os.path.expanduser("~"), "Documentos"), "Destino_Documentos"),
                 (os.path.join(os.path.expanduser("~"), "Programas"), "Programas"),
             ]
             for ruta, alias in defaults_destino:
@@ -292,27 +327,28 @@ class GestorBaseDatos:
             # Asegurar que existen destinos para asociar
             self.db.cursor.execute("SELECT id, ruta, nombre_alias FROM directorios_destino")
             destinos = {row['nombre_alias']: row['ruta'] for row in self.db.cursor.fetchall()}
-
+            # Reglas iniciales simplificadas: vincular Destino_Documentos a .docx, .pdf, .xls
+            destino_docs = destinos.get('Destino_Documentos', os.path.join(os.path.expanduser("~"), "Documents"))
             reglas_default = [
-                ("Documentos", ".pdf,.docx,.txt", destinos.get('Documentos', 'Documentos'), 10),
-                ("Imágenes", ".jpg,.png", destinos.get('Imágenes', 'Imágenes'), 10),
-                ("Ejecutables", ".exe,.msi", destinos.get('Programas', 'Programas'), 5),
+                ("Regla_Docx", ".docx", destino_docs),
+                ("Regla_Pdf", ".pdf", destino_docs),
+                ("Regla_Xls", ".xls", destino_docs),
             ]
-            for nombre, ext, destino, prioridad in reglas_default:
+            for nombre, ext, destino in reglas_default:
                 try:
-                    self.agregar_regla(nombre, ext, destino, prioridad)
+                    self.agregar_regla(nombre, ext, destino)
                 except Exception:
                     pass
 
         # Commit final por si dejó operaciones pendientes
         self.db.confirmar()
 
-    def agregar_regla(self, nombre, extension, carpeta_destino, prioridad=0, activa=True):
+    def agregar_regla(self, nombre, extension, carpeta_destino, activa=True):
         try:
             self.db.cursor.execute("""
-                INSERT INTO reglas_organizacion (nombre, extension, carpeta_destino, prioridad, activa) 
-                VALUES (?, ?, ?, ?, ?)
-            """, (nombre, extension, carpeta_destino, prioridad, int(activa)))
+                INSERT INTO reglas_organizacion (nombre, extension, carpeta_destino, activa) 
+                VALUES (?, ?, ?, ?)
+            """, (nombre, extension, carpeta_destino, int(activa)))
             self.db.confirmar()
             return True
         except sqlite3.Error as e:
@@ -322,9 +358,9 @@ class GestorBaseDatos:
     def obtener_reglas(self, solo_activas=True):
         try:
             if solo_activas:
-                self.db.cursor.execute("SELECT * FROM reglas_organizacion WHERE activa = 1 ORDER BY prioridad DESC")
+                self.db.cursor.execute("SELECT * FROM reglas_organizacion WHERE activa = 1 ORDER BY fecha_creacion DESC")
             else:
-                self.db.cursor.execute("SELECT * FROM reglas_organizacion ORDER BY prioridad DESC")
+                self.db.cursor.execute("SELECT * FROM reglas_organizacion ORDER BY fecha_creacion DESC")
             return self.db.cursor.fetchall()
         except sqlite3.Error as e:
             self.logar_error("obtener_reglas_organizacion", str(e))
@@ -412,22 +448,16 @@ def inicializar_nueva_db():
 
     # Agregar carpetas por defecto
     usuario = os.path.expanduser("~")
-    gestor.agregar_carpeta_monitoreada(f"{usuario}/Downloads", "descargas")
+    gestor.agregar_carpeta_monitoreada(f"{usuario}/Downloads", "Origen_Descargas")
     gestor.agregar_carpeta_monitoreada(f"{usuario}/Desktop", "escritorio")
     gestor.agregar_carpeta_monitoreada(f"{usuario}/Documents", "documentos")
 
     # Agregar reglas por defecto
-    reglas_default = [
-        ("Imágenes", ".jpg,.png,.gif,.bmp,.webp", "Imágenes", 10),
-        ("Documentos", ".pdf,.doc,.docx,.txt,.xls,.xlsx", "Documentos", 10),
-        ("Videos", ".mp4,.avi,.mkv,.mov,.wmv", "Videos", 10),
-        ("Audio", ".mp3,.wav,.flac,.aac,.ogg", "Audio", 10),
-        ("Comprimidos", ".zip,.rar,.7z,.tar,.gz", "Comprimidos", 5),
-        ("Ejecutables", ".exe,.msi,.bat,.sh", "Programas", 5),
-    ]
-
-    for nombre, ext, destino, prioridad in reglas_default:
-        gestor.agregar_regla(nombre, ext, destino, prioridad)
+    # Semilla mínima solicitada: vincular Destino_Documentos con .docx, .pdf, .xls
+    destino_docs = os.path.join(os.path.expanduser("~"), "Documents")
+    gestor.agregar_regla("Regla_Docx", ".docx", destino_docs)
+    gestor.agregar_regla("Regla_Pdf", ".pdf", destino_docs)
+    gestor.agregar_regla("Regla_Xls", ".xls", destino_docs)
 
     # Verificar integridad
     if gestor.verificar_integridad():
