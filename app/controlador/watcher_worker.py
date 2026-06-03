@@ -74,12 +74,19 @@ class WatcherWorker(QObject):
                     core = self._core or MotorOrganizadorCore(self._db_path)
                     _, destinos, reglas = core.obtener_configuracion()
 
-                    ext = os.path.splitext(path)[1].lower().lstrip('.')
+                    ext = os.path.splitext(path)[1].lower()
                     destino_alias = None
+                    fallback_alias = None
                     for regla in reglas:
-                        if regla.get('extension') == ext or regla.get('extension') is None:
+                        regla_ext = regla.get('extension')
+                        if regla_ext and regla_ext.lower() == ext:
                             destino_alias = regla.get('destino_alias')
                             break
+                        if regla_ext is None and fallback_alias is None:
+                            fallback_alias = regla.get('destino_alias')
+
+                    if destino_alias is None:
+                        destino_alias = fallback_alias
 
                     if destino_alias and destino_alias in destinos:
                         destino_dir = destinos[destino_alias]
@@ -178,12 +185,18 @@ class WatcherWorker(QObject):
                             if ready and self._db_path:
                                 core = self._core or MotorOrganizadorCore(self._db_path)
                                 _, destinos, reglas = core.obtener_configuracion()
-                                ext = os.path.splitext(line)[1].lower().lstrip('.')
+                                ext = os.path.splitext(line)[1].lower()
                                 destino_alias = None
+                                fallback_alias = None
                                 for regla in reglas:
-                                    if regla.get('extension') == ext or regla.get('extension') is None:
+                                    regla_ext = regla.get('extension')
+                                    if regla_ext and regla_ext.lower() == ext:
                                         destino_alias = regla.get('destino_alias')
                                         break
+                                    if regla_ext is None and fallback_alias is None:
+                                        fallback_alias = regla.get('destino_alias')
+                                if destino_alias is None:
+                                    destino_alias = fallback_alias
                                 if destino_alias and destino_alias in destinos:
                                     destino_dir = destinos[destino_alias]
                                     os.makedirs(destino_dir, exist_ok=True)

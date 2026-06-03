@@ -1,6 +1,7 @@
 
 import sys
 from pathlib import Path
+from datetime import datetime
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                                QLabel, QPushButton, QFrame, QGridLayout, 
                                QScrollArea, QLineEdit, QApplication, QGraphicsDropShadowEffect,
@@ -25,14 +26,19 @@ class TarjetaMetrica(QFrame):
         self.setStyleSheet(f"background: #181818; border-radius: 10px; padding: 15px;")
         l = QVBoxLayout(self)
         t = QLabel(titulo); t.setStyleSheet("color: #aaaaaa; font-size: 11px; font-weight: bold;"); t.setAlignment(Qt.AlignCenter)
-        v = QLabel(valor); v.setStyleSheet(f"color: {color}; font-size: 32px; font-weight: bold; margin: 5px 0;"); v.setAlignment(Qt.AlignCenter)
-        l.addWidget(t); l.addWidget(v)
+        self.valor_label = QLabel(valor); self.valor_label.setStyleSheet(f"color: {color}; font-size: 32px; font-weight: bold; margin: 5px 0;"); self.valor_label.setAlignment(Qt.AlignCenter)
+        l.addWidget(t); l.addWidget(self.valor_label)
+
+    def actualizar_valor(self, valor):
+        self.valor_label.setText(valor)
 
 
 class DashboardOrganizador(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.asistente = AsistenteVigiData() 
+        self.asistente = AsistenteVigiData()
+        self.escaneos_ejecutados = 0
+        self.ultimo_escaneo = None
         
         # === PASO 4: CONTROL DE EXCLUSIÓN MUTUA / CONCURRENCIA ===
         self.escaneo_en_progreso = False
@@ -73,8 +79,8 @@ class DashboardOrganizador(QMainWindow):
 
         # Mensaje de bienvenida automático
         try:
-            self.msg_l.insertWidget(self.msg_l.count()-1, QLabel("<b>IA:</b> Hola, ¿cómo te puedo ayudar?", styleSheet="color: white; background: #222; padding: 8px; border-radius: 5px;"))
-            self.msg_l.insertWidget(self.msg_l.count()-1, QLabel("<b>IA:</b> Escribe /ayuda si no sabes qué comando usar.", styleSheet="color: white; background: #222; padding: 8px; border-radius: 5px;"))
+            self.msg_l.insertWidget(self.msg_l.count()-1, QLabel("<b>Sistema:</b> Hola, ¿cómo te puedo ayudar?", styleSheet="color: white; background: #222; padding: 8px; border-radius: 5px;"))
+            self.msg_l.insertWidget(self.msg_l.count()-1, QLabel("<b>Sistema:</b> Escribe /ayuda si no sabes qué comando usar.", styleSheet="color: white; background: #222; padding: 8px; border-radius: 5px;"))
         except Exception:
             pass
 
@@ -130,8 +136,8 @@ class DashboardOrganizador(QMainWindow):
         self.btn_config_global.clicked.connect(lambda: self.cambiar_vista(1, self.btn_config_global))
         l.addWidget(self.btn_config_global)
         
-        # Botón 2: Reglas de IA 
-        self.btn_reglas = QPushButton("   Reglas de IA")
+        # Botón 2: Reglas de organización
+        self.btn_reglas = QPushButton("   Reglas")
         self.btn_reglas.setStyleSheet(estilo_btn)
         self.btn_reglas.clicked.connect(lambda: self.cambiar_vista(2, self.btn_reglas))
         l.addWidget(self.btn_reglas)
@@ -204,10 +210,16 @@ class DashboardOrganizador(QMainWindow):
         except Exception:
             total_reglas = "0"
 
-        grid.addWidget(TarjetaMetrica("ARCHIVOS PROCESADOS", total_mov, "white"), 0, 0)
-        grid.addWidget(TarjetaMetrica("CATEGORÍAS IA", total_reglas, "#eab308"), 0, 1)
-        grid.addWidget(TarjetaMetrica("PRECISIÓN NLP", "96.4%", "#22c55e"), 0, 2)
-        grid.addWidget(TarjetaMetrica("ESPACIO LIBERADO", "14.2 GB", "#eab308"), 0, 3)
+        self.card_archivos = TarjetaMetrica("ARCHIVOS PROCESADOS", total_mov, "white")
+        self.card_reglas = TarjetaMetrica("REGLAS DEFINIDAS", total_reglas, "#eab308")
+        self.card_escaneos = TarjetaMetrica("ESCANEOS EJECUTADOS", str(self.escaneos_ejecutados), "#22c55e")
+        ultimo_texto = self.ultimo_escaneo.strftime("%Y-%m-%d %H:%M:%S") if self.ultimo_escaneo else "Nunca"
+        self.card_ultimo = TarjetaMetrica("ÚLTIMO ESCANEO", ultimo_texto, "#eab308")
+
+        grid.addWidget(self.card_archivos, 0, 0)
+        grid.addWidget(self.card_reglas, 0, 1)
+        grid.addWidget(self.card_escaneos, 0, 2)
+        grid.addWidget(self.card_ultimo, 0, 3)
         layout.addLayout(grid)
 
         center_h = QHBoxLayout()
@@ -221,7 +233,7 @@ class DashboardOrganizador(QMainWindow):
 
         act_f = QFrame(); act_f.setStyleSheet("background: #181818; border-radius: 10px; border: 1px solid #222;")
         act_l = QVBoxLayout(act_f)
-        act_l.addWidget(QLabel("Últimas Acciones Inteligentes", styleSheet="color:white; font-weight:bold;"))
+        act_l.addWidget(QLabel("Últimas Acciones", styleSheet="color:white; font-weight:bold;"))
         self.scroll_act = QScrollArea(); self.scroll_act.setWidgetResizable(True); self.scroll_act.setStyleSheet("border:none;")
         self.act_cont = QWidget(); self.act_list = QVBoxLayout(self.act_cont); self.act_list.addStretch()
         self.scroll_act.setWidget(self.act_cont)
@@ -244,8 +256,7 @@ class DashboardOrganizador(QMainWindow):
         
         # PASO 5: Actualización del estado visual en la UI
         self.btn_scan.setEnabled(False)
-        self.btn_scan.setText("🤖 ESCANEANDO...")
-        self.registrar_accion_en_interfaz("🔄 [Sistema] Iniciando ciclo de escaneo automatizado...")
+        self.btn_scan.setText("ESCANEANDO...")
 
         try:
             # Consumir la clase HiloOrganizador importada desde el motor core modificado
@@ -274,6 +285,8 @@ class DashboardOrganizador(QMainWindow):
     def finalizar_escaneo(self, total_archivos):
         """Restablece los controles y refresca las métricas dinámicas (CRUD)"""
         self.escaneo_en_progreso = False
+        self.escaneos_ejecutados += 1
+        self.ultimo_escaneo = datetime.now()
         
         # Restaurar botón lateral
         self.btn_scan.setEnabled(True)
@@ -314,35 +327,20 @@ class DashboardOrganizador(QMainWindow):
             db_path = self.asistente.modelo_org.db_path
             total_mov = f"{get_total_movidos(db_path):,}"
             total_reglas = f"{get_total_reglas(db_path):,}"
+            escaneos = str(self.escaneos_ejecutados)
+            ultimo_texto = self.ultimo_escaneo.strftime("%Y-%m-%d %H:%M:%S") if self.ultimo_escaneo else "Nunca"
         except Exception:
             return
 
         try:
-            layout_main = self.vista_dashboard.layout()
-            grid = None
-            for i in range(layout_main.count()):
-                item = layout_main.itemAt(i)
-                if isinstance(item, QGridLayout) or hasattr(item, 'layout'):
-                    maybe = item.layout() if hasattr(item, 'layout') else None
-                    if isinstance(maybe, QGridLayout):
-                        grid = maybe
-                        break
+            self.card_archivos.actualizar_valor(total_mov)
+            self.card_reglas.actualizar_valor(total_reglas)
+            self.card_escaneos.actualizar_valor(escaneos)
+            self.card_ultimo.actualizar_valor(ultimo_texto)
         except Exception:
-            grid = None
+            pass
 
-        if grid is None:
-            return
-
-        for col in (0,1):
-            item = grid.itemAtPosition(0, col)
-            if item and item.widget():
-                w = item.widget()
-                w.setParent(None)
-
-        grid.addWidget(TarjetaMetrica("ARCHIVOS PROCESADOS", total_mov, "white"), 0, 0)
-        grid.addWidget(TarjetaMetrica("CATEGORÍAS IA", total_reglas, "#eab308"), 0, 1)
-
-    # === COMPONENTES SECUNDARIOS DEL CHAT ASISTENTE (MANTENIDOS) ===
+    # === COMPONENTES SECUNDARIOS DEL CHAT DEL SISTEMA ===
     def init_chat_floating(self):
         """Inicializa la ventana de chat flotante original con capacidad de minimizar"""
         self.chat_win = QFrame(self)
@@ -355,7 +353,7 @@ class DashboardOrganizador(QMainWindow):
         self.chat_layout = QVBoxLayout(self.chat_win)
         self.chat_layout.setContentsMargins(0,0,0,0)
 
-        self.btn_toggle = QPushButton("Asistente PyOrganizer")
+        self.btn_toggle = QPushButton("Mensajes del Sistema")
         self.btn_toggle.setFixedHeight(40)
         self.btn_toggle.setStyleSheet("QPushButton { background: #eab308; color: black; font-weight: bold; border-top-left-radius: 10px; border-top-right-radius: 10px; border: none; } QPushButton:hover { background: #c79906; }")
         self.btn_toggle.clicked.connect(self.toggle_chat)
@@ -413,7 +411,7 @@ class DashboardOrganizador(QMainWindow):
         self.msg_l.insertWidget(self.msg_l.count()-1, QLabel(f"<b>Tú:</b> {txt}", styleSheet="color: #888; font-size: 11px;"))
 
         if isinstance(respuesta, dict) and 'suggestions' in respuesta:
-            self.msg_l.insertWidget(self.msg_l.count()-1, QLabel(f"<b>IA:</b> {respuesta.get('message')}", styleSheet="color: white; background: #222; padding: 8px; border-radius: 5px;"))
+            self.msg_l.insertWidget(self.msg_l.count()-1, QLabel(f"<b>Sistema:</b> {respuesta.get('message')}", styleSheet="color: white; background: #222; padding: 8px; border-radius: 5px;"))
             for i in reversed(range(self.suggestion_layout.count())):
                 w = self.suggestion_layout.itemAt(i).widget()
                 if w: w.setParent(None)
@@ -425,7 +423,7 @@ class DashboardOrganizador(QMainWindow):
                 self.suggestion_layout.addWidget(btn)
             self.suggestion_container.show()
         else:
-            self.msg_l.insertWidget(self.msg_l.count()-1, QLabel(f"<b>IA:</b> {respuesta}", styleSheet="color: white; background: #222; padding: 8px; border-radius: 5px;"))
+            self.msg_l.insertWidget(self.msg_l.count()-1, QLabel(f"<b>Sistema:</b> {respuesta}", styleSheet="color: white; background: #222; padding: 8px; border-radius: 5px;"))
             self.suggestion_container.hide()
 
         self.chat_display.verticalScrollBar().setValue(self.chat_display.verticalScrollBar().maximum())

@@ -181,36 +181,48 @@ class MotorOrganizadorCore:
         origen_padre = str(ruta_origen_defecto) if ruta_origen_defecto else str(archivo_path.parent)
 
         # Evaluar secuencialmente las reglas cargadas desde la base de datos
+        destino_alias = None
+        fallback_alias = None
         for regla in reglas:
-            coincide_ext = (regla["extension"] == ext_archivo) or (regla["extension"] is None)
+            regla_ext = regla["extension"]
             alias_dest = regla["destino_alias"]
+            if alias_dest not in destinos:
+                continue
 
-            if coincide_ext and alias_dest in destinos:
-                ruta_final_dir = destinos[alias_dest]
-                
-                try:
-                    # Garantizar existencia física de la carpeta destino
-                    os.makedirs(ruta_final_dir, exist_ok=True)
-                    ruta_final_archivo = ruta_final_dir / archivo_path.name
+            if regla_ext == ext_archivo:
+                destino_alias = alias_dest
+                break
+            if regla_ext is None and fallback_alias is None:
+                fallback_alias = alias_dest
 
-                    # Resolver colisiones de nombres si el archivo ya existe manteniendo la extensión intacta
-                    if ruta_final_archivo.exists():
-                        nombre_base = archivo_path.stem
-                        contador = 1
-                        while ruta_final_archivo.exists():
-                            ruta_final_archivo = ruta_final_dir / f"{nombre_base}_{contador}{ext_archivo}"
-                            contador += 1
+        if destino_alias is None:
+            destino_alias = fallback_alias
 
-                    # Instanciar el Asistente para procesar el movimiento físico e historial
-                    asist = AsistenteVigiData()
-                    moved = asist._move_and_register(archivo_path, ruta_final_dir, origen_padre)
-                    
-                    if moved:
-                        return True, f"✅ Organizado: {archivo_path.name} ➔ {alias_dest.upper()}"
-                except Exception as e:
-                    return False, f"❌ Error al aplicar regla en {archivo_path.name}: {str(e)}"
-                
-                break # Archivo emparejado con éxito, romper bucle de evaluación de reglas
+        if destino_alias and destino_alias in destinos:
+            ruta_final_dir = destinos[destino_alias]
+            try:
+                # Garantizar existencia física de la carpeta destino
+                os.makedirs(ruta_final_dir, exist_ok=True)
+                ruta_final_archivo = ruta_final_dir / archivo_path.name
+
+                # Resolver colisiones de nombres si el archivo ya existe manteniendo la extensión intacta
+                if ruta_final_archivo.exists():
+                    nombre_base = archivo_path.stem
+                    contador = 1
+                    while ruta_final_archivo.exists():
+                        ruta_final_archivo = ruta_final_dir / f"{nombre_base}_{contador}{ext_archivo}"
+                        contador += 1
+
+                # Instanciar el Asistente para procesar el movimiento físico e historial
+                asist = AsistenteVigiData()
+                moved = asist._move_and_register(archivo_path, ruta_final_dir, origen_padre)
+
+                if moved:
+                    return True, f"✅ Organizado: {archivo_path.name} ➔ {destino_alias.upper()}"
+            except Exception as e:
+                return False, f"❌ Error al aplicar regla en {archivo_path.name}: {str(e)}"
+
+        return False, None
 
         return False, None
 
