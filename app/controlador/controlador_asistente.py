@@ -3,10 +3,16 @@ import os
 import shutil
 import re
 from pathlib import Path
+from difflib import get_close_matches
+from PySide6.QtCore import QObject, Signal
 from app.modelo.modelo import ModeloOrganizador
 
-class AsistenteVigiData:
+
+class AsistenteVigiData(QObject):
+    actualizar_estadisticas = Signal(dict)
+
     def __init__(self):
+        super().__init__()
          # Cargar el modelo entrenado
         self.modelo = None
         # Ubicación dinámica del modelo binario de FastText
@@ -19,6 +25,22 @@ class AsistenteVigiData:
                 self.modelo = None
 
         self.modelo_org = ModeloOrganizador()
+
+        # Cargar frases de entrenamiento para sugerencias (fuzzy)
+        self._entrenamiento_path = Path(__file__).resolve().parent.parent / 'recursos' / 'entrenamiento.txt'
+        self._frases_entrenamiento = []
+        try:
+            if self._entrenamiento_path.exists():
+                with open(self._entrenamiento_path, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and line.startswith('__label__'):
+                            # store the human phrase part after the label
+                            parts = line.split(maxsplit=1)
+                            if len(parts) == 2:
+                                self._frases_entrenamiento.append(parts[1].lower())
+        except Exception:
+            self._frases_entrenamiento = []
 
         # =========================================================================
         # PARTE 1: MAPA DE RUTAS INSTINTIVAS (ATAJOS)
@@ -64,7 +86,22 @@ class AsistenteVigiData:
             return f"⚠️ Error al analizar texto: {str(e)}"
 
         if probabilidad < 0.20:
-            return "🤔 No entiendo bien tu instrucción. Intenta estructurarla de forma más sencilla."
+            # Generar sugerencias usando frases de entrenamiento (fuzzy match)
+            texto_l = texto.lower()
+            suggestions = get_close_matches(texto_l, self._frases_entrenamiento, n=5, cutoff=0.4)
+            # Si no hay matches por similitud, ofrecer ejemplos comunes
+            if not suggestions:
+                suggestions = [
+                    "crea una carpeta llamada proyecto en documentos",
+                    "mueve pdf a mis proyectos",
+                    "muéstrame el reporte de estadísticas",
+                    "ayuda",
+                ]
+
+            return {
+                'message': "🤔 No entiendo bien tu instrucción. Prueba una de estas sugerencias:",
+                'suggestions': suggestions
+            }
 
         # =========================================================================
         # PARTE 2: FILTRADO DE INTENCIONES CON REGEX E IDIOMA NATURAL
@@ -80,7 +117,13 @@ class AsistenteVigiData:
                 
                 # Resuelve el alias a una ruta real o usa el Escritorio por defecto
                 ruta_padre = self.rutas_atajo.get(destino_alias, self.rutas_atajo["escritorio"])
-                return self.crear_carpeta_intuitiva(ruta_padre, nombre_carpeta)
+                resultado = self.crear_carpeta_intuitiva(ruta_padre, nombre_carpeta)
+                # Emitir señal de actualización con metadata mínima
+                try:
+                    self.actualizar_estadisticas.emit({'accion': 'crear', 'nombre': nombre_carpeta, 'destino': str(ruta_padre)})
+                except Exception:
+                    pass
+                return resultado
                 
             return "❌ Formato de creación no reconocido. Intenta: 'crea una carpeta llamada unellez en documentos'."
 
@@ -126,7 +169,21 @@ class AsistenteVigiData:
                     return "❌ No logré descifrar qué mover o a dónde ir. Intenta: 'mueve tarea a unellez en el escritorio'."
 
             # Ejecutar el movimiento inteligente con la ruta resuelta
-            return self.ejecutar_movimiento_inteligente(elemento_origen, ruta_destino)
+            resultado = self.ejecutar_movimiento_inteligente(elemento_origen, ruta_destino)
+            # Emitir señal con conteo aproximado si hubo éxito
+            try:
+                # intentar inferir cuántos archivos fueron movidos desde el mensaje
+                count = 0
+                if isinstance(resultado, str):
+                    m = re.search(r"Movidos (\d+) archivos", resultado)
+                    if m:
+                        count = int(m.group(1))
+                    elif 'He movido el archivo' in resultado:
+                        count = 1
+                self.actualizar_estadisticas.emit({'accion': 'mover', 'origen': elemento_origen, 'destino': ruta_destino, 'cantidad': count})
+            except Exception:
+                pass
+            return resultado
 
         return f"Intención detectada: '{etiqueta}' con {probabilidad*100:.1f}% de confianza, pero sin ejecutor."
 

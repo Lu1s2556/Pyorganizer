@@ -41,6 +41,11 @@ class DashboardOrganizador(QMainWindow):
     def __init__(self):
         super().__init__()
         self.asistente = AsistenteVigiData() 
+        # Conectar señal de estadísticas del asistente
+        try:
+            self.asistente.actualizar_estadisticas.connect(self.handle_actualizar_estadisticas)
+        except Exception:
+            pass
         
         # Variable de estado para el chat flotante
         self.chat_expandido = True 
@@ -210,6 +215,13 @@ class DashboardOrganizador(QMainWindow):
 
         self.chat_layout.addWidget(self.chat_body)
 
+        # Contenedor para botones de sugerencia (cuando la IA no entiende)
+        self.suggestion_container = QWidget()
+        self.suggestion_layout = QHBoxLayout(self.suggestion_container)
+        self.suggestion_layout.setContentsMargins(8,4,8,4)
+        self.suggestion_container.hide()
+        self.chat_layout.addWidget(self.suggestion_container)
+
     def toggle_chat(self):
         if self.chat_expandido:
             self.chat_body.hide()
@@ -233,14 +245,58 @@ class DashboardOrganizador(QMainWindow):
     def enviar_a_controlador(self):
         txt = self.chat_input.text().strip()
         if not txt: return
-        
         respuesta = self.asistente.procesar_peticion(txt)
-        
+
         self.msg_l.insertWidget(self.msg_l.count()-1, QLabel(f"<b>Tú:</b> {txt}", styleSheet="color: #888; font-size: 11px;"))
-        self.msg_l.insertWidget(self.msg_l.count()-1, QLabel(f"<b>IA:</b> {respuesta}", styleSheet="color: white; background: #222; padding: 8px; border-radius: 5px;"))
-        
+
+        # Si la respuesta es un dict con sugerencias, mostrar botones
+        if isinstance(respuesta, dict) and 'suggestions' in respuesta:
+            self.msg_l.insertWidget(self.msg_l.count()-1, QLabel(f"<b>IA:</b> {respuesta.get('message')}", styleSheet="color: white; background: #222; padding: 8px; border-radius: 5px;"))
+            # Limpiar contenedor de sugerencias y poblar
+            for i in reversed(range(self.suggestion_layout.count())):
+                w = self.suggestion_layout.itemAt(i).widget()
+                if w: w.setParent(None)
+
+            for sug in respuesta.get('suggestions', []):
+                btn = QPushButton(sug)
+                btn.setStyleSheet("QPushButton{background:#2b2b2b;color:white;padding:6px;border-radius:6px;} QPushButton:hover{background:#3b3b3b}")
+                btn.clicked.connect(lambda _, s=sug: self._usar_sugerencia(s))
+                self.suggestion_layout.addWidget(btn)
+
+            self.suggestion_container.show()
+        else:
+            # Normal string response: insertar como mensaje simple
+            self.msg_l.insertWidget(self.msg_l.count()-1, QLabel(f"<b>IA:</b> {respuesta}", styleSheet="color: white; background: #222; padding: 8px; border-radius: 5px;"))
+            # ocultar sugerencias si existían
+            self.suggestion_container.hide()
+
         self.chat_display.verticalScrollBar().setValue(self.chat_display.verticalScrollBar().maximum())
         self.chat_input.clear()
+
+    def _usar_sugerencia(self, texto_sugerencia):
+        """Rellena la entrada con la sugerencia y la envía automáticamente"""
+        self.chat_input.setText(texto_sugerencia)
+        self.enviar_a_controlador()
+
+    def handle_actualizar_estadisticas(self, info: dict):
+        """Recibe dicts desde `AsistenteVigiData.actualizar_estadisticas` y actualiza la interfaz."""
+        # Registrar acción ligera en el historial y actualizar tarjetas si es necesario
+        tipo = info.get('accion', 'accion')
+        if tipo == 'crear':
+            nombre = info.get('nombre', '')
+            destino = info.get('destino', '')
+            lbl = QLabel(f"➔ Carpeta creada: {nombre} → {Path(destino).name}")
+        elif tipo == 'mover':
+            cantidad = info.get('cantidad', 0)
+            origen = info.get('origen', '')
+            destino = info.get('destino', '')
+            lbl = QLabel(f"➔ Movimiento inteligente: {cantidad} archivos → {Path(destino).name}")
+        else:
+            lbl = QLabel(f"➔ {tipo}: {info}")
+
+        lbl.setStyleSheet("color: #22c55e; font-size: 11px; padding: 2px; background: #121212; border-radius: 3px; margin: 2px 0;")
+        self.act_list.insertWidget(self.act_list.count() - 1, lbl)
+        self.scroll_act.verticalScrollBar().setValue(self.scroll_act.verticalScrollBar().maximum())
 
     def ejecutar_escaneo_asincrono(self):
         """Prepara e inicia el hilo secundario del Core"""
