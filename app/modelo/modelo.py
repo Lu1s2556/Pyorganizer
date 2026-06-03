@@ -3,12 +3,19 @@ import sqlite3
 from pathlib import Path
 from datetime import datetime
 from app.modelo.base_de_datos import BaseDeDatos, GestorBaseDatos
+
 class ModeloOrganizador:
     def __init__(self):
         # Ruta dinámica de la base de datos en la carpeta recursos
         self.db_path = Path(__file__).resolve().parent.parent / 'recursos' / 'organizador.db'
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.inicializar_base_de_datos()
+        # Gestor para tablas avanzadas y directorios (usa el mismo archivo organizador.db)
+        try:
+            self.gestor = GestorBaseDatos(db_name="organizador.db")
+            self.gestor.crear_tablas()
+        except Exception:
+            self.gestor = None
 
     def inicializar_base_de_datos(self):
         """Crea las tablas necesarias para la persistencia del sistema"""
@@ -111,3 +118,36 @@ class ModeloOrganizador:
             return f"✅ Carpeta '{nombre_carpeta}' creada con éxito en {ruta_base.name}."
         except Exception as e:
             return f"❌ Error al crear carpeta: {str(e)}"
+
+    # Wrappers hacia GestorBaseDatos para gestión de destinos y reglas
+    def agregar_directorio_destino(self, ruta, nombre_alias=None):
+        try:
+            if not self.gestor:
+                return False
+            return self.gestor.agregar_directorio_destino(ruta, nombre_alias)
+        except Exception:
+            return False
+
+    def obtener_directorios_destino(self):
+        try:
+            if not self.gestor:
+                return []
+            return self.gestor.obtener_directorios_destino()
+        except Exception:
+            return []
+
+    def eliminar_regla_por_extension(self, extension):
+        try:
+            if not self.gestor:
+                return False
+            return self.gestor.eliminar_regla(extension)
+        except Exception:
+            return False
+
+    def agregar_carpeta_monitoreada(self, ruta, alias=None):
+        try:
+            if not self.gestor:
+                return False
+            return self.gestor.agregar_carpeta_monitoreada(ruta, alias)
+        except Exception:
+            return False

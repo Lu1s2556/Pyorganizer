@@ -382,6 +382,45 @@ class GestorBaseDatos:
             self.logar_error("agregar_regla_organizacion", str(e))
             return False
 
+    def eliminar_regla(self, extension):
+        try:
+            self.db.cursor.execute("DELETE FROM reglas_organizacion WHERE extension = ?", (extension,))
+            self.db.confirmar()
+            return True
+        except sqlite3.Error as e:
+            self.logar_error("eliminar_regla", str(e))
+            return False
+
+    def agregar_directorio_destino(self, ruta, nombre_alias=None):
+        try:
+            self.db.cursor.execute(
+                "INSERT OR IGNORE INTO directorios_destino (ruta, nombre_alias) VALUES (?, ?)",
+                (ruta, nombre_alias)
+            )
+            self.db.confirmar()
+            return True
+        except sqlite3.Error as e:
+            self.logar_error("agregar_directorio_destino", str(e))
+            return False
+
+    def obtener_directorios_destino(self):
+        try:
+            self.db.cursor.execute("SELECT * FROM directorios_destino ORDER BY fecha_creacion DESC")
+            return self.db.cursor.fetchall()
+        except sqlite3.Error as e:
+            self.logar_error("obtener_directorios_destino", str(e))
+            return []
+
+    def eliminar_directorio_destino(self, alias_or_ruta):
+        try:
+            # Intentar eliminar por alias primero
+            self.db.cursor.execute("DELETE FROM directorios_destino WHERE nombre_alias = ? OR ruta = ?", (alias_or_ruta, alias_or_ruta))
+            self.db.confirmar()
+            return True
+        except sqlite3.Error as e:
+            self.logar_error("eliminar_directorio_destino", str(e))
+            return False
+
     def obtener_reglas(self, solo_activas=True):
         try:
             if solo_activas:

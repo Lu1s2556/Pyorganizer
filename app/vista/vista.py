@@ -443,6 +443,11 @@ class DashboardOrganizador(QMainWindow):
             f"Mueve <b>archivos</b> a <b>{alias_keys[1]}</b>",
             f"Crea una carpeta llamada <b>fotos</b> en <b>{alias_keys[0]}</b>",
             f"Mueve <b>pdf</b> a <b>{alias_keys[2]}</b>",
+            "Crear destino: <b>crear destino fotos en C:/Users/miusuario/Imágenes</b>",
+            "Agregar origen (monitor): <b>monitorizar C:/Users/miusuario/Descargas como descargas</b>",
+            "Agregar regla: <b>asignar .pdf a Destino_Documentos</b>",
+            "Listar: <b>listar reglas</b> | <b>mostrar destinos</b> | <b>mostrar orígenes</b>",
+            "Eliminar regla: <b>eliminar regla .pdf</b>",
         ]
         alias_html = ''.join(f"<li>{a}</li>" for a in alias_keys[:6])
 
