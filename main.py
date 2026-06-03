@@ -35,7 +35,7 @@ def ejecutar_organizador():
 
         # Iniciar WatcherThread para monitoreo en segundo plano
         try:
-            from app.watcher_thread import WatcherThread
+            from app.controlador.watcher_thread import WatcherThread
             from pathlib import Path
             db_path = str(Path(__file__).resolve().parent / 'app' / 'recursos' / 'organizador.db')
             watcher = WatcherThread(db_path)

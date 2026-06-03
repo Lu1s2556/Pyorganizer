@@ -1,21 +1,15 @@
 import os
 import sqlite3
 import threading
-from PySide6.QtCore import QObject, Signal, Slot
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QObject, Signal, Slot, QThread
 from watchdog.observers import Observer
-from app.watcher_worker import WatcherWorker
+from app.controlador.watcher_worker import WatcherWorker
 from pathlib import Path
 import traceback
 
 
 class WatcherThread(QThread):
-    """QThread que ejecuta un Observer de watchdog y gestiona reinicios dinámicos.
-
-    - Carga rutas de origen desde la BD (`carpetas_monitoreadas`)
-    - Programa el `WatcherWorker.handler` sobre esas rutas (no recursivo)
-    - Soporta `restart()` para recargar rutas en caliente
-    """
+    """QThread que ejecuta un Observer de watchdog y gestiona reinicios dinámicos."""
 
     started_ok = Signal()
     stopped = Signal()
@@ -88,31 +82,11 @@ class WatcherThread(QThread):
         self._running = False
 
     def restart(self):
-        """Detiene y vuelve a iniciar el observer recargando rutas desde la BD."""
         try:
-            # stopping will let run() exit and cleanup
             self.stop()
-            # wait for thread to finish
             self.wait(1000)
         except Exception:
             pass
 
-        # Create a fresh observer by restarting the thread
         if not self.isRunning():
             self.start()
-    def run(self):
-        try:
-            self._observer = Observer()
-            # ... (todo el código original del try) ...
-
-        except Exception as e:
-            # === NUEVO BLOQUE DE DEPURACIÓN ===
-            print("\n" + "="*50)
-            print("🔍 RASTREO DEL ERROR FANTASMA:")
-            print(traceback.format_exc())
-            print("="*50 + "\n")
-            
-            try:
-                self.error.emit(str(e))
-            except Exception:
-                pass

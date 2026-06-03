@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.watcher_worker import WatcherWorker
+from app.controlador.watcher_worker import WatcherWorker
 
 
 def simulate_download(target_dir: Path, final_name: str, write_time: float = 3.0):

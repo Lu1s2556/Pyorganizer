@@ -59,6 +59,18 @@ class DashboardOrganizador(QMainWindow):
         self.init_content_views() 
         self.init_chat_floating()
 
+        # Conectar señal global para refrescar estadísticas cuando cambien
+        try:
+            app_signals.stats_changed.connect(self.refrescar_panel_resumen)
+        except Exception:
+            pass
+
+        # Refrescar inmediatamente las estadísticas reales al iniciar
+        try:
+            self.refrescar_panel_resumen()
+        except Exception:
+            pass
+
         # Mensaje de bienvenida automático
         try:
             self.msg_l.insertWidget(self.msg_l.count()-1, QLabel("<b>IA:</b> Hola, ¿cómo te puedo ayudar?", styleSheet="color: white; background: #222; padding: 8px; border-radius: 5px;"))
@@ -68,7 +80,7 @@ class DashboardOrganizador(QMainWindow):
 
         # Iniciar Watchdog nativo en tiempo real
         try:
-            from app.watcher_thread import WatcherThread
+            from app.controlador.watcher_thread import WatcherThread
             self.watchdog = WatcherThread(self.asistente.modelo_org.db_path)
             try:
                 self.watchdog._worker.move_result.connect(self._on_move_result)
@@ -84,9 +96,10 @@ class DashboardOrganizador(QMainWindow):
 
         # === PASO 3 y 4: PROGRAMACIÓN DEL QTIMER GLOBAL DE ALTA FRECUENCIA (20 SEG) ===
         try:
+            # Cambiado a 60s cooldown para reducir carga en sistemas modestos
             self.timer_escaneo_20s = QTimer(self)
             self.timer_escaneo_20s.timeout.connect(self.iniciar_escaneo)
-            self.timer_escaneo_20s.start(20000)  # 20000 ms = 20 segundos
+            self.timer_escaneo_20s.start(60000)  # 60000 ms = 60 segundos
         except Exception as e:
             print(f"Error al inicializar el temporizador global: {e}")
 
@@ -287,7 +300,11 @@ class DashboardOrganizador(QMainWindow):
         try:
             msg = f"👀 [Monitor] {info.get('message')} - {info.get('path')}"
             self.registrar_accion_en_interfaz(msg)
-            self.refrescar_panel_resumen()
+            try:
+                app_signals.stats_changed.emit()
+            except Exception:
+                # Fallback a refrescar directamente si la señal falla
+                self.refrescar_panel_resumen()
         except Exception:
             pass
 
