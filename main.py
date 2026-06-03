@@ -33,11 +33,32 @@ def ejecutar_organizador():
         ventana = DashboardOrganizador()
         ventana.show()
 
+        # Iniciar WatcherThread para monitoreo en segundo plano
+        try:
+            from app.watcher_thread import WatcherThread
+            db_path = str(Path(__file__).resolve().parent / 'app' / 'recursos' / 'organizador.db')
+            watcher = WatcherThread(db_path)
+            # Conectar señales para logging básico
+            watcher.started_ok.connect(lambda: print("Watcher iniciado"))
+            watcher.error.connect(lambda msg: print(f"Watcher error: {msg}"))
+            watcher.move_result = getattr(watcher, 'move_result', None)
+            watcher.start()
+        except Exception as e:
+            print(f"No se pudo iniciar WatcherThread: {e}")
+
         print(" Interfaz VigiData iniciada correctamente.")
         print(" Memoria optimizada para entorno de 8GB RAM.")
 
         # Ejecución del bucle de eventos
-        sys.exit(aplicacion.exec())
+        try:
+            sys.exit(aplicacion.exec())
+        finally:
+            try:
+                if 'watcher' in locals() and watcher is not None:
+                    watcher.stop()
+                    watcher.wait(1000)
+            except Exception:
+                pass
 
     except ImportError as e:
         print(f" Error: No se pudo cargar PySide6. Verifica tu entorno Poetry. {e}")

@@ -82,9 +82,13 @@ class DashboardOrganizador(QMainWindow):
 
         # Iniciar watchdog para monitorear carpetas de origen configuradas
         try:
-            from app.core.motor_organizador import WatchdogThread
-            self.watchdog = WatchdogThread(self.asistente.modelo_org.db_path)
-            self.watchdog.file_created.connect(self.registrar_accion_en_interfaz)
+            from app.watcher_thread import WatcherThread
+            self.watchdog = WatcherThread(self.asistente.modelo_org.db_path)
+            # Conectar señal de resultados de movimiento para mostrar en la interfaz
+            try:
+                self.watchdog._worker.move_result.connect(self._on_move_result)
+            except Exception:
+                pass
             self.watchdog.start()
         except Exception:
             pass
@@ -213,6 +217,16 @@ class DashboardOrganizador(QMainWindow):
         
         layout.addLayout(center_h, 1)
         return content
+
+    def _on_move_result(self, info: dict):
+        """Slot que maneja resultados de movimiento emitidos por el watcher."""
+        try:
+            msg = f"{info.get('message')} - {info.get('path')}"
+            label = QLabel(msg); label.setStyleSheet("color: white; background: #222; padding: 8px; border-radius: 5px;")
+            # Insertar arriba de la lista
+            self.act_list.insertWidget(0, label)
+        except Exception:
+            pass
 
     def init_chat_floating(self):
         """Inicializa la ventana de chat flotante original con capacidad de minimizar"""

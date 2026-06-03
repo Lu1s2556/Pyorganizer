@@ -155,9 +155,36 @@ class GestorBaseDatos:
                 self.migrar_remover_prioridad_reglas()
             except Exception:
                 pass
+            # Asegurar compatibilidad de columnas en directorios_destino
+            try:
+                self.migrar_directorios_destino_columnas()
+            except Exception:
+                pass
             self.sembrar_si_vacia()
         except Exception as e:
             print(f"Error durante el seeding por defecto: {e}")
+
+    def migrar_directorios_destino_columnas(self):
+        """Asegura que la tabla directorios_destino tenga columnas `nombre` y `nombre_alias`.
+
+        Algunas versiones antiguas usan `nombre` mientras que la estructura actual usa `nombre_alias`.
+        Esta función añade las columnas faltantes sin eliminar datos.
+        """
+        self.db.cursor.execute("PRAGMA table_info(directorios_destino)")
+        cols = [r['name'] for r in self.db.cursor.fetchall()]
+        # Si no existe nombre_alias, añadirlo
+        if 'nombre_alias' not in cols:
+            try:
+                self.db.cursor.execute("ALTER TABLE directorios_destino ADD COLUMN nombre_alias TEXT")
+            except Exception:
+                pass
+        # Si no existe nombre (algunos módulos aún intentan escribir en 'nombre'), añadirlo
+        if 'nombre' not in cols:
+            try:
+                self.db.cursor.execute("ALTER TABLE directorios_destino ADD COLUMN nombre TEXT")
+            except Exception:
+                pass
+        self.db.confirmar()
 
     def migrar_remover_prioridad_reglas(self):
         """Realiza migración para eliminar la columna 'prioridad' de reglas_organizacion si existe.

@@ -171,8 +171,8 @@ class VistaConfiguracionGlobal(QWidget):
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS directorios_destino (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                nombre TEXT NOT NULL UNIQUE,
-                ruta TEXT NOT NULL UNIQUE
+                ruta TEXT NOT NULL UNIQUE,
+                nombre_alias TEXT
             )
         """)
         conn.commit()
@@ -226,7 +226,7 @@ class VistaConfiguracionGlobal(QWidget):
     def cargar_destinos(self):
         try:
             conn, cursor = self.conectar_db()
-            cursor.execute("SELECT id, nombre, ruta FROM directorios_destino")
+            cursor.execute("SELECT id, nombre_alias, ruta FROM directorios_destino")
             filas = cursor.fetchall()
             conn.close()
 
@@ -234,7 +234,7 @@ class VistaConfiguracionGlobal(QWidget):
             for idx, fila in enumerate(filas):
                 self.tabla_destinos.insertRow(idx)
                 self.tabla_destinos.setItem(idx, 0, QTableWidgetItem(str(fila[0])))
-                self.tabla_destinos.setItem(idx, 1, QTableWidgetItem(str(fila[1])))
+                self.tabla_destinos.setItem(idx, 1, QTableWidgetItem(str(fila[1] or '')))
                 self.tabla_destinos.setItem(idx, 2, QTableWidgetItem(str(fila[2])))
         except Exception as e:
             print(f"Error al cargar destinos: {e}")
@@ -247,7 +247,7 @@ class VistaConfiguracionGlobal(QWidget):
             return
         try:
             conn, cursor = self.conectar_db()
-            cursor.execute("INSERT INTO directorios_destino (nombre, ruta) VALUES (?, ?)", (nombre, ruta))
+            cursor.execute("INSERT INTO directorios_destino (ruta, nombre_alias) VALUES (?, ?)", (ruta, nombre))
             conn.commit()
             conn.close()
             self.input_alias_destino.clear()
