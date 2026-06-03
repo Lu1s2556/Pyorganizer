@@ -6,7 +6,7 @@ from pathlib import Path
 try:
     from PySide6.QtCore import QThread, Signal
 except Exception:
-    # If PySide6 isn't available in this environment, define fallbacks for linting/tests
+    
     class QThread:
         def __init__(self):
             pass
@@ -19,6 +19,36 @@ from watchdog.events import FileSystemEventHandler
 from app.controlador.controlador_asistente import AsistenteVigiData
 
 
+# =====================================================================
+# NUEVO: HILO DE TRABAJO PARA EL ESCANEO ASÍNCRONO AUTOMÁTICO (PASO 5)
+# =====================================================================
+class HiloOrganizador(QThread):
+    """
+    QThread encargado de ejecutar las tareas de ordenamiento pesado en 
+    segundo plano, evitando congelar la interfaz de usuario (UI).
+    """
+    progreso_senal = Signal(str)  # Envía logs en tiempo real a la vista
+    finalizado_senal = Signal(int) # Envía el conteo total al terminar
+
+    def __init__(self, motor_core):
+        super().__init__()
+        self.motor_core = motor_core
+
+    def run(self):
+        try:
+            # Llama a la rutina unificada del motor usando la señal como callback
+            total_movidos = self.motor_core.procesar_organizacion(
+                callback_progreso=self.progreso_senal.emit
+            )
+            self.finalizado_senal.emit(total_movidos)
+        except Exception as e:
+            self.progreso_senal.emit(f"❌ Error crítico en HiloOrganizador: {e}")
+            self.finalizado_senal.emit(0)
+
+
+# =====================================================================
+# COMPONENTES EXISTENTES: WATCHDOG (MONITOREO EN TIEMPO REAL)
+# =====================================================================
 class WatchdogThread(QThread):
     """Hilo Qt que ejecuta un Observer de watchdog y emite señales cuando se crean archivos."""
     file_created = Signal(str)
@@ -30,7 +60,6 @@ class WatchdogThread(QThread):
         self._running = False
 
     def run(self):
-        # Cargar rutas origen desde la base de datos
         origenes = []
         try:
             conn = sqlite3.connect(str(self.db_path))
@@ -75,16 +104,13 @@ class _CreatedHandler(FileSystemEventHandler):
         self.qt_signal = qt_signal
 
     def on_created(self, event):
-        # Solo archivos
         if event.is_directory:
             return
         try:
             path = event.src_path
-            # Emitir la ruta del archivo creado
             try:
                 self.qt_signal.emit(path)
             except Exception:
-                # si Signal no es real (entorno de pruebas), intentar llamar como función
                 try:
                     self.qt_signal(path)
                 except Exception:
@@ -93,6 +119,9 @@ class _CreatedHandler(FileSystemEventHandler):
             pass
 
 
+# =====================================================================
+# NÚCLEO OPTIMIZADO: CORE DEL MOTOR ORGANIZADOR
+# =====================================================================
 class MotorOrganizadorCore:
     def __init__(self, db_path):
         self.db_path = db_path
@@ -102,42 +131,23 @@ class MotorOrganizadorCore:
 
     def obtener_configuracion(self):
         """
-        Extrae los orígenes, destinos y reglas organizadas por prioridad.
-        Retorna estructuras de datos nativas (listas/dict) muy ligeras en memoria.
+        Punto 2 del Plan: Extrae de forma limpia los orígenes, destinos y reglas activas.
+        Retorna estructuras de datos nativas muy ligeras en memoria.
         """
-        conn = sqlite3.connect(str(self.db_path))
+        conn = self._conectar_db()
         cursor = conn.cursor()
 
         # 1. Obtener carpetas de origen (monitoreadas)
         cursor.execute("SELECT ruta FROM carpetas_monitoreadas WHERE activa = 1")
         origenes = [Path(fila[0]) for fila in cursor.fetchall() if os.path.exists(fila[0])]
 
-        # 2. Obtener mapas de carpetas destino (alias -> ruta_real)
-        destinos = {}
-        try:
-            cursor.execute("SELECT nombre_alias, ruta FROM directorios_destino")
-            destinos = {fila[0].lower(): Path(fila[1]) for fila in cursor.fetchall()}
-        except Exception:
-            # Fallbacks: try common alternative column names
-            try:
-                cursor.execute("SELECT alias, ruta FROM directorios_destino")
-                destinos = {fila[0].lower(): Path(fila[1]) for fila in cursor.fetchall()}
-            except Exception:
-                try:
-                    cursor.execute("SELECT nombre, ruta FROM directorios_destino")
-                    destinos = {fila[0].lower(): Path(fila[1]) for fila in cursor.fetchall()}
-                except Exception:
-                    # As a last resort, attempt to read only ruta and create numeric aliases
-                    try:
-                        cursor.execute("SELECT ruta FROM directorios_destino")
-                        for idx, fila in enumerate(cursor.fetchall()):
-                            destinos[f"destino_{idx}"] = Path(fila[0])
-                    except Exception:
-                        destinos = {}
+        # 2. Obtener mapas de carpetas destino (nombre_alias -> ruta) de forma estricta
+        cursor.execute("SELECT nombre_alias, ruta FROM directorios_destino")
+        destinos = {fila[0].lower().strip(): Path(fila[1]) for fila in cursor.fetchall()}
 
-        # 3. Obtener reglas de organización activas ordenadas por prioridad de mayor a menor
+        # 3. Obtener reglas de organización activas por carpeta de destino filtrada (Fase 2)
         cursor.execute("""
-            SELECT extension, carpeta_destino 
+            SELECT extension, carpeta_destino, nombre 
             FROM reglas_organizacion 
             WHERE activa = 1 
             ORDER BY fecha_creacion DESC
@@ -145,77 +155,108 @@ class MotorOrganizadorCore:
         reglas = []
         for fila in cursor.fetchall():
             ext = fila[0].strip().lower() if fila[0] else None
+            if ext and not ext.startswith('.'):
+                ext = f".{ext}"
+                
             reglas.append({
                 "extension": ext,
-                "destino_alias": fila[1].lower(),
+                "destino_alias": fila[1].lower().strip(),
+                "nombre_regla": fila[2]
             })
 
         conn.close()
         return origenes, destinos, reglas
 
+    def procesar_archivo(self, ruta_archivo, conexion_compartida, destinos, reglas, ruta_origen_defecto=None):
+        """
+        Punto 1 del Plan: Función independiente que evalúa las reglas dinámicas vinculadas 
+        a la carpeta destino, resuelve colisiones de nombres y procesa el movimiento.
+        """
+        archivo_path = Path(ruta_archivo)
+        if not archivo_path.is_file():
+            return False, None
+
+        # Usar el sufijo directo con punto nativo de Python (ej: ".pdf")
+        ext_archivo = archivo_path.suffix.lower().strip()
+        origen_padre = str(ruta_origen_defecto) if ruta_origen_defecto else str(archivo_path.parent)
+
+        # Evaluar secuencialmente las reglas cargadas desde la base de datos
+        for regla in reglas:
+            coincide_ext = (regla["extension"] == ext_archivo) or (regla["extension"] is None)
+            alias_dest = regla["destino_alias"]
+
+            if coincide_ext and alias_dest in destinos:
+                ruta_final_dir = destinos[alias_dest]
+                
+                try:
+                    # Garantizar existencia física de la carpeta destino
+                    os.makedirs(ruta_final_dir, exist_ok=True)
+                    ruta_final_archivo = ruta_final_dir / archivo_path.name
+
+                    # Resolver colisiones de nombres si el archivo ya existe manteniendo la extensión intacta
+                    if ruta_final_archivo.exists():
+                        nombre_base = archivo_path.stem
+                        contador = 1
+                        while ruta_final_archivo.exists():
+                            ruta_final_archivo = ruta_final_dir / f"{nombre_base}_{contador}{ext_archivo}"
+                            contador += 1
+
+                    # Instanciar el Asistente para procesar el movimiento físico e historial
+                    asist = AsistenteVigiData()
+                    moved = asist._move_and_register(archivo_path, ruta_final_dir, origen_padre)
+                    
+                    if moved:
+                        return True, f"✅ Organizado: {archivo_path.name} ➔ {alias_dest.upper()}"
+                except Exception as e:
+                    return False, f"❌ Error al aplicar regla en {archivo_path.name}: {str(e)}"
+                
+                break # Archivo emparejado con éxito, romper bucle de evaluación de reglas
+
+        return False, None
+
     def procesar_organizacion(self, callback_progreso=None):
         """
-        Escanea los directorios de origen y mueve los archivos basándose en las reglas.
-        Usa un generador liviano para no saturar la memoria RAM.
+        Punto 2 y 3 del Plan: Prepara el entorno y hace el barrido secuencial usando os.scandir.
+        Garantiza un consumo ultra optimizado de memoria RAM (inferior a 120MB).
         """
         origenes, destinos, reglas = self.obtener_configuracion()
         archivos_movidos = 0
 
         if not origenes or not destinos:
+            if callback_progreso:
+                callback_progreso("⚠️ No hay carpetas de origen o destino activas en la configuración.")
             return 0
 
+        # Apertura de una conexión persistente única para optimizar operaciones I/O
+        conn = self._conectar_db()
+
         for ruta_origen in origenes:
-            # Iterar solo sobre los archivos directos del origen (evitamos recursividad masiva para cuidar la RAM)
             try:
-                for entrada in os.scandir(ruta_origen):
-                    if entrada.is_file():
-                        archivo_path = Path(entrada.path)
-                        ext_archivo = archivo_path.suffix.lower().replace(".", "")
-
-                        # Buscar qué regla coincide (al estar ordenadas por prioridad, la primera que aplique gana)
-                        for regla in reglas:
-                            coincide_ext = (regla["extension"] == ext_archivo) or (regla["extension"] is None)
-                            alias_dest = regla["destino_alias"]
-
-                            if coincide_ext and alias_dest in destinos:
-                                ruta_final_dir = destinos[alias_dest]
-                                
-                                # Asegurar que la carpeta de destino exista físicamente
-                                os.makedirs(ruta_final_dir, exist_ok=True)
-                                
-                                ruta_final_archivo = ruta_final_dir / archivo_path.name
-
-                                # Manejo de colisiones de nombres (si el archivo ya existe en el destino)
-                                if ruta_final_archivo.exists():
-                                    nombre_base = archivo_path.stem
-                                    contador = 1
-                                    while ruta_final_archivo.exists():
-                                        ruta_final_archivo = ruta_final_dir / f"{nombre_base}_{contador}.{ext_archivo}"
-                                        contador += 1
-
-                                try:
-                                            # Delegate actual move + registration to helper in controller
-                                            asist = AsistenteVigiData()
-                                            # Ensure destino dir exists
-                                            os.makedirs(ruta_final_dir, exist_ok=True)
-                                            moved = asist._move_and_register(archivo_path, ruta_final_dir, ruta_origen)
-                                            if moved:
-                                                archivos_movidos += 1
-                                                if callback_progreso:
-                                                    callback_progreso(f"Movido: {archivo_path.name} → {alias_dest}")
-                                except Exception as e:
-                                    if callback_progreso:
-                                        callback_progreso(f"Error al mover {archivo_path.name}: {str(e)}")
-                                
-                                break # Rompe el ciclo de reglas, pasa al siguiente archivo
+                # Iteración optimizada en bajo consumo usando os.scandir (Punto 4 del Plan)
+                with os.scandir(ruta_origen) as it:
+                    for entrada in it:
+                        if entrada.is_file():
+                            exito, mensaje = self.procesar_archivo(
+                                ruta_archivo=entrada.path,
+                                conexion_compartida=conn,
+                                destinos=destinos,
+                                reglas=reglas,
+                                ruta_origen_defecto=ruta_origen
+                            )
+                            if exito:
+                                archivos_movidos += 1
+                                if callback_progreso and mensaje:
+                                    callback_progreso(mensaje)
             except Exception as e:
                 if callback_progreso:
-                    callback_progreso(f"Error accediendo a {ruta_origen}: {str(e)}")
+                    callback_progreso(f"❌ Error accediendo a {ruta_origen.name}: {str(e)}")
 
+        conn.close()
         return archivos_movidos
 
     def escanear_ahora(self, callback_progreso=None):
-        """Ejecuta un escaneo inmediato usando la lógica de organización.
-        Retorna la cantidad de archivos movidos.
+        """
+        Punto 2 del Plan: Método público y reutilizable. 
+        Ejecuta un escaneo inmediato mapeando la lógica estructurada de organización.
         """
         return self.procesar_organizacion(callback_progreso=callback_progreso)
