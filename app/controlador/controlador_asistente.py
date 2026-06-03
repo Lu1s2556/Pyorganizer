@@ -99,37 +99,6 @@ class AsistenteVigiData:
         if probabilidad < self.umbral_confianza:
             return f"🤔 No tengo certeza suficiente ({probabilidad*100:.1f}%). Requiero mínimo {self.umbral_confianza*100:.0f}%."
 
-        # --- Comandos directos de gestión (sin depender únicamente de la etiqueta) ---
-        # Crear/añadir destino: 'crear destino <alias> en <ruta>'
-        m_dest = re.search(r'(?:crear|añadir)\s+destin[ao]\s+([\w\d_-]+)\s+(?:en\s+)?(.+)', texto, re.IGNORECASE)
-        if m_dest:
-            alias = m_dest.group(1).strip()
-            ruta_raw = m_dest.group(2).strip()
-            ruta = self.rutas_atajo.get(ruta_raw.lower(), ruta_raw)
-            ruta_path = Path(ruta)
-            if not ruta_path.exists():
-                return f"La ruta '{ruta}' no existe. Responde con: 'confirmar crear destino {alias} en {ruta}' para crearla y registrarla."
-            # Registrar en BD
-            try:
-                ok = False
-                if hasattr(self.modelo_org, 'agregar_directorio_destino'):
-                    ok = self.modelo_org.agregar_directorio_destino(str(ruta_path), alias)
-                elif getattr(self.modelo_org, 'gestor', None):
-                    ok = self.modelo_org.gestor.agregar_directorio_destino(str(ruta_path), alias)
-                if ok:
-                    try:
-                        self.actualizar_reglas_en_memoria()
-                    except Exception:
-                        pass
-                    try:
-                        app_signals.stats_changed.emit()
-                    except Exception:
-                        pass
-                    return f"✅ Destino registrado: {alias} → {ruta}"
-                return f"❌ Falló el registro del destino {alias}."
-            except Exception as e:
-                return f"❌ Error al registrar destino: {e}"
-
         # Confirmar creación y registro: 'confirmar crear destino <alias> en <ruta>'
         m_confirm_dest = re.search(r'^confirmar\s+crear\s+destin[ao]\s+([\w\d_-]+)\s+(?:en\s+)?(.+)', texto, re.IGNORECASE)
         if m_confirm_dest:
@@ -162,30 +131,75 @@ class AsistenteVigiData:
             except Exception as e:
                 return f"❌ Error finalizando registro: {e}"
 
+        # Confirmar creación de origen: 'confirmar agregar origen <alias> en <ruta>'
+        m_confirm_origen = re.search(r'^confirmar\s+agregar\s+origen\s+([\w\d_-]+)\s+(?:en\s+)?(.+)$', texto, re.IGNORECASE)
+        if m_confirm_origen:
+            alias = m_confirm_origen.group(1).strip()
+            ruta_raw = m_confirm_origen.group(2).strip()
+            ruta = self.rutas_atajo.get(ruta_raw.lower(), ruta_raw)
+            ruta_path = Path(ruta)
+            try:
+                ruta_path.mkdir(parents=True, exist_ok=True)
+            except Exception as e:
+                return f"❌ No pude crear la carpeta física: {e}"
+            try:
+                ok = False
+                if getattr(self.modelo_org, 'gestor', None):
+                    ok = self.modelo_org.agregar_carpeta_monitoreada(str(ruta_path), alias)
+                if ok:
+                    try:
+                        app_signals.stats_changed.emit()
+                    except Exception:
+                        pass
+                    return f"✅ Origen creado y registrado: {alias} → {ruta}"
+                return f"❌ Error al registrar origen tras crearlo."
+            except Exception as e:
+                return f"❌ Error al finalizar registro de origen: {e}"
+
         # Monitorizar / agregar origen: 'monitorizar <ruta> como <alias>' or 'agregar origen <alias> en <ruta>'
-        m_mon = re.search(r'(?:monitoriz(?:ar|ar)|monitorear)\s+(.+?)\s+como\s+([\w\d_-]+)', texto, re.IGNORECASE)
-        if not m_mon:
-            m_mon = re.search(r'(?:agregar)\s+origen\s+([\w\d_-]+)\s+(?:en\s+)?(.+)', texto, re.IGNORECASE)
-            if m_mon:
-                alias = m_mon.group(1).strip()
-                ruta_raw = m_mon.group(2).strip()
-                ruta = self.rutas_atajo.get(ruta_raw.lower(), ruta_raw)
-                ruta_path = Path(ruta)
-                if not ruta_path.exists():
-                    return f"La ruta '{ruta}' no existe. Responde 'confirmar agregar origen {alias} en {ruta}' para crearla y registrarla."
-                try:
-                    ok = False
-                    if getattr(self.modelo_org, 'gestor', None):
-                        ok = self.modelo_org.agregar_carpeta_monitoreada(str(ruta_path), alias)
-                    if ok:
-                        try:
-                            app_signals.stats_changed.emit()
-                        except Exception:
-                            pass
-                        return f"✅ Origen registrado: {alias} → {ruta}"
-                    return f"❌ No se pudo registrar origen {alias}."
-                except Exception as e:
-                    return f"❌ Error al registrar origen: {e}"
+        m_mon = re.search(r'^(?:monitorizar|monitorear)\s+(.+?)\s+como\s+([\w\d_-]+)$', texto, re.IGNORECASE)
+        if m_mon:
+            ruta_raw = m_mon.group(1).strip()
+            alias = m_mon.group(2).strip()
+            ruta = self.rutas_atajo.get(ruta_raw.lower(), ruta_raw)
+            ruta_path = Path(ruta)
+            if not ruta_path.exists():
+                return f"La ruta '{ruta}' no existe. Responde 'confirmar agregar origen {alias} en {ruta}' para crearla y registrarla."
+            try:
+                ok = False
+                if getattr(self.modelo_org, 'gestor', None):
+                    ok = self.modelo_org.agregar_carpeta_monitoreada(str(ruta_path), alias)
+                if ok:
+                    try:
+                        app_signals.stats_changed.emit()
+                    except Exception:
+                        pass
+                    return f"✅ Origen registrado: {alias} → {ruta}"
+                return f"❌ No se pudo registrar origen {alias}."
+            except Exception as e:
+                return f"❌ Error al registrar origen: {e}"
+
+        m_mon = re.search(r'^(?:agregar)\s+origen\s+([\w\d_-]+)\s+(?:en\s+)?(.+)$', texto, re.IGNORECASE)
+        if m_mon:
+            alias = m_mon.group(1).strip()
+            ruta_raw = m_mon.group(2).strip()
+            ruta = self.rutas_atajo.get(ruta_raw.lower(), ruta_raw)
+            ruta_path = Path(ruta)
+            if not ruta_path.exists():
+                return f"La ruta '{ruta}' no existe. Responde 'confirmar agregar origen {alias} en {ruta}' para crearla y registrarla."
+            try:
+                ok = False
+                if getattr(self.modelo_org, 'gestor', None):
+                    ok = self.modelo_org.agregar_carpeta_monitoreada(str(ruta_path), alias)
+                if ok:
+                    try:
+                        app_signals.stats_changed.emit()
+                    except Exception:
+                        pass
+                    return f"✅ Origen registrado: {alias} → {ruta}"
+                return f"❌ No se pudo registrar origen {alias}."
+            except Exception as e:
+                return f"❌ Error al registrar origen: {e}"
 
         # Asignar regla por extensión: 'asignar .pdf a <alias>' o 'regla: .jpg -> fotos'
         m_reg = re.search(r'(?:asignar|regla:?)\s*\.?([A-Za-z0-9]+)\s*(?:->|a)\s+([\w\d_-]+)', texto, re.IGNORECASE)
