@@ -86,3 +86,15 @@ __label__borrar elimina la carpeta Descargas de Documentos
 __label__borrar borra la carpeta SinUso de Documentos
 __label__borrar elimina la carpeta ProyectoViejo de Documentos
 __label__borrar borra la carpeta DocumentosOld de Documentos
+
+# Ejemplos para crear y registrar destinos (crear destino <alias> en <ruta>)
+__label__crear crear destino Fotos en C:/Users/usuario/Imágenes
+__label__crear crear destino Destino_Documentos en C:/Users/usuario/Documents
+__label__crear crear destino MisProyectos en C:/Users/usuario/Documents/GitHub
+__label__crear crea destino Respaldos en D:/Respaldos
+__label__crear crear destino Fotos en fotos
+__label__crear crear destino Documentos en documentos
+__label__crear crear destino Proyectos en mis proyectos
+__label__crear crear destino Respaldos en respaldos
+__label__crear crear destino USB en mi pendrive
+__label__crear crear destino FotosFamilia en fotos

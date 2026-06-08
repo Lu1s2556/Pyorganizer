@@ -131,6 +131,37 @@ class AsistenteVigiData:
             except Exception as e:
                 return f"❌ Error finalizando registro: {e}"
 
+        # Soporte directo: 'crear destino <alias> en <ruta>' (sin confirmar)
+        m_create_dest = re.search(r'^(?:crear|crear destino|crear_destino)\s*(?:destin[ao]\s*)?([\w\d_-]+)\s+(?:en\s+)?(.+)$', texto, re.IGNORECASE)
+        if m_create_dest:
+            alias = m_create_dest.group(1).strip()
+            ruta_raw = m_create_dest.group(2).strip()
+            ruta = self.rutas_atajo.get(ruta_raw.lower(), ruta_raw)
+            ruta_path = Path(ruta)
+            try:
+                ruta_path.mkdir(parents=True, exist_ok=True)
+            except Exception as e:
+                return f"❌ No pude crear la carpeta física: {e}"
+            try:
+                ok = False
+                if hasattr(self.modelo_org, 'agregar_directorio_destino'):
+                    ok = self.modelo_org.agregar_directorio_destino(str(ruta_path), alias)
+                elif getattr(self.modelo_org, 'gestor', None):
+                    ok = self.modelo_org.gestor.agregar_directorio_destino(str(ruta_path), alias)
+                if ok:
+                    try:
+                        self.actualizar_reglas_en_memoria()
+                    except Exception:
+                        pass
+                    try:
+                        app_signals.stats_changed.emit()
+                    except Exception:
+                        pass
+                    return f"✅ Carpeta creada y registrada: {alias} → {ruta}"
+                return f"❌ Error al registrar destino tras crear carpeta."
+            except Exception as e:
+                return f"❌ Error finalizando registro: {e}"
+
         # Confirmar creación de origen: 'confirmar agregar origen <alias> en <ruta>'
         m_confirm_origen = re.search(r'^confirmar\s+agregar\s+origen\s+([\w\d_-]+)\s+(?:en\s+)?(.+)$', texto, re.IGNORECASE)
         if m_confirm_origen:

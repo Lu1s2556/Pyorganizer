@@ -379,6 +379,14 @@ class DashboardOrganizador(QMainWindow):
         self.suggestion_container.hide()
         self.chat_layout.addWidget(self.suggestion_container)
 
+        # Asegurar que el chat flotante sea visible y correctamente posicionado
+        try:
+            self.chat_win.show()
+            self.chat_win.raise_()
+            self.actualizar_posicion_chat()
+        except Exception:
+            pass
+
     def toggle_chat(self):
         if self.chat_expandido:
             self.chat_body.hide()
