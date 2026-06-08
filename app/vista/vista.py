@@ -7,7 +7,8 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QScrollArea, QLineEdit, QApplication, QGraphicsDropShadowEffect,
                                QStackedWidget, QMessageBox)
 from PySide6.QtCore import Qt, QSize, QThread, Signal, QTimer
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtGui import QColor, QFont, QPainter
+from PySide6.QtCharts import QChartView, QChart, QBarSeries, QBarSet, QBarCategoryAxis, QValueAxis
 
 from app.services import get_total_movidos, get_total_reglas
 from app.signals import app_signals
@@ -46,10 +47,8 @@ class DashboardOrganizador(QMainWindow):
         
         self.setWindowTitle("PyOrganizer - Panel de Control")
         self.resize(1200, 800)
-        try:
-            self.showMaximized()
-        except Exception:
-            pass
+        # Evitar forzar maximizado en sistemas multi-monitor que causan errores de geometría
+        # Mostrar la ventana en tamaño predeterminado y permitir al usuario maximizar manualmente
         self.setStyleSheet("QMainWindow { background-color: #0c0c0c; }")
 
         self.central = QWidget()
@@ -84,19 +83,9 @@ class DashboardOrganizador(QMainWindow):
         except Exception:
             pass
 
-        # Iniciar Watchdog nativo en tiempo real
+        # Iniciar Watchdog en diferido para evitar congelar UI al inicio
         try:
-            from app.controlador.watcher_thread import WatcherThread
-            self.watchdog = WatcherThread(self.asistente.modelo_org.db_path)
-            try:
-                self.watchdog._worker.move_result.connect(self._on_move_result)
-            except Exception:
-                pass
-            try:
-                self.watchdog._worker.file_ready.connect(self.asistente.procesar_archivo_nuevo)
-            except Exception:
-                pass
-            self.watchdog.start()
+            QTimer.singleShot(3000, self.iniciar_watchdog)
         except Exception:
             pass
 
@@ -110,7 +99,24 @@ class DashboardOrganizador(QMainWindow):
             print(f"Error al inicializar el temporizador global: {e}")
 
         # === PASO 1: ARRANQUE Y ACTIVACIÓN AUTOMÁTICA AL INICIAR LA UI ===
-        QTimer.singleShot(2000, self.iniciar_escaneo)
+        QTimer.singleShot(3000, self.iniciar_escaneo)
+
+    def iniciar_watchdog(self):
+        try:
+            from app.controlador.watcher_thread import WatcherThread
+            self.watchdog = WatcherThread(self.asistente.modelo_org.db_path)
+            try:
+                # Intentar conectar señales opcionales de compatibilidad
+                self.watchdog._worker.move_result.connect(self._on_move_result)
+            except Exception:
+                pass
+            try:
+                self.watchdog._worker.file_ready.connect(self.asistente.procesar_archivo_nuevo)
+            except Exception:
+                pass
+            self.watchdog.start()
+        except Exception:
+            pass
 
     def init_sidebar(self):
         """Barra lateral izquierda adaptada según el plan corporativo global"""
@@ -229,6 +235,17 @@ class DashboardOrganizador(QMainWindow):
         chart_l.addWidget(QLabel("Distribución de Archivos por Categoría", styleSheet="color:white; font-weight:bold;"))
         mock_pie = QLabel("GRÁFICO DE DISTRIBUCIÓN"); mock_pie.setAlignment(Qt.AlignCenter); mock_pie.setStyleSheet("color: #333;")
         chart_l.addWidget(mock_pie)
+        # Label simple que mostrará los top tipos (texto en lugar de gráfico para compatibilidad rápida)
+        self.tipo_chart_label = QLabel(); self.tipo_chart_label.setStyleSheet("color: white; margin-top: 8px; font-size: 12px;")
+        chart_l.addWidget(self.tipo_chart_label)
+
+        # Gráfico de barras QtCharts (inicialmente vacío)
+        try:
+            self.chart_view = QChartView()
+            self.chart_view.setRenderHint(self.chart_view.Antialiasing)
+            chart_l.addWidget(self.chart_view)
+        except Exception:
+            self.chart_view = None
         center_h.addWidget(chart_f, 2)
 
         act_f = QFrame(); act_f.setStyleSheet("background: #181818; border-radius: 10px; border: 1px solid #222;")
@@ -321,6 +338,22 @@ class DashboardOrganizador(QMainWindow):
         except Exception:
             pass
 
+    def closeEvent(self, event):
+        """Cerrar ordenado: detener watcher si existe y esperar a que termine."""
+        try:
+            if hasattr(self, 'watchdog') and getattr(self, 'watchdog') is not None:
+                try:
+                    self.watchdog.stop()
+                except Exception:
+                    pass
+                try:
+                    self.watchdog.wait(1000)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        super().closeEvent(event)
+
     def refrescar_panel_resumen(self):
         """Actualiza las tarjetas superiores consultando `services.py`."""
         try:
@@ -337,6 +370,51 @@ class DashboardOrganizador(QMainWindow):
             self.card_reglas.actualizar_valor(total_reglas)
             self.card_escaneos.actualizar_valor(escaneos)
             self.card_ultimo.actualizar_valor(ultimo_texto)
+            # Actualizar lista resumida de tipos
+            try:
+                from app.services import obtener_archivos_por_tipo
+                top = obtener_archivos_por_tipo(db_path, limite=5)
+                texto = " | ".join([f"{ext}:{cnt}" for ext, cnt in top]) if top else "Sin datos"
+                try:
+                    self.tipo_chart_label.setText(texto)
+                except Exception:
+                    pass
+            except Exception:
+                pass
+            # Actualizar QtChart si está disponible
+            try:
+                if getattr(self, 'chart_view', None):
+                    from app.services import obtener_archivos_por_tipo
+                    top = obtener_archivos_por_tipo(db_path, limite=10)
+                    series = QBarSeries()
+                    categories = []
+                    bar_set = QBarSet('Cantidad')
+                    for ext, cnt in top:
+                        categories.append(ext)
+                        bar_set.append(cnt)
+                    series.append(bar_set)
+                    chart = QChart()
+                    chart.addSeries(series)
+                    axisX = QBarCategoryAxis()
+                    axisX.append(categories)
+                    chart.addAxis(axisX, Qt.AlignBottom)
+                    series.attachAxis(axisX)
+                    axisY = QValueAxis()
+                    # Ajustar rango Y para que las barras sean visibles
+                    maxv = max([cnt for _, cnt in top]) if top else 1
+                    axisY.setRange(0, maxv if maxv>0 else 1)
+                    chart.addAxis(axisY, Qt.AlignLeft)
+                    series.attachAxis(axisY)
+                    chart.legend().setVisible(False)
+                    chart.setTitle('Top extensiones movidas')
+                    try:
+                        self.chart_view.setChart(chart)
+                        # Mejorar renderizado
+                        self.chart_view.setRenderHint(QPainter.Antialiasing)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -453,7 +531,9 @@ class DashboardOrganizador(QMainWindow):
             f"Mueve <b>pdf</b> a <b>{alias_keys[2]}</b>",
             "Crear destino: <b>crear destino fotos en C:/Users/miusuario/Imágenes</b>",
             "Agregar origen (monitor): <b>monitorizar C:/Users/miusuario/Descargas como descargas</b>",
-            "Agregar regla: <b>asignar .pdf a Destino_Documentos</b>",
+            "Agregar origen (IA, lenguaje natural): <b>añade descargas como origen y crea la carpeta TareasUniversidad</b>",
+            "Agregar regla (IA): <b>crea una regla para pdf y docx a respaldos</b>",
+            "Agregar regla (comando directo): <b>asignar .pdf a Destino_Documentos</b>",
             "Listar: <b>listar reglas</b> | <b>mostrar destinos</b> | <b>mostrar orígenes</b>",
             "Eliminar regla: <b>eliminar regla .pdf</b>",
         ]

@@ -147,21 +147,43 @@ class MotorOrganizadorCore:
 
         # 3. Obtener reglas de organización activas por carpeta de destino filtrada (Fase 2)
         cursor.execute("""
-            SELECT extension, carpeta_destino, nombre 
+            SELECT id, extension, carpeta_destino, nombre 
             FROM reglas_organizacion 
             WHERE activa = 1 
             ORDER BY fecha_creacion DESC
         """)
         reglas = []
-        for fila in cursor.fetchall():
-            ext = fila[0].strip().lower() if fila[0] else None
-            if ext and not ext.startswith('.'):
-                ext = f".{ext}"
-                
+        filas_reglas = cursor.fetchall()
+        for fila in filas_reglas:
+            rid = fila[0]
+            legacy_ext = fila[1].strip().lower() if fila[1] else None
+            exts = []
+            # Incluir valor legacy si existe (soporta coma-separado)
+            if legacy_ext:
+                parts = [p.strip() for p in legacy_ext.split(',') if p.strip()]
+                for p in parts:
+                    if not p.startswith('.'):
+                        p = f'.{p.lstrip('.')}'
+                    exts.append(p)
+
+            # Intentar cargar extensiones normalizadas desde regla_extensiones
+            try:
+                cursor.execute("SELECT extension FROM regla_extensiones WHERE regla_id = ?", (rid,))
+                for r2 in cursor.fetchall():
+                    v = r2[0].strip().lower()
+                    if v and not v.startswith('.'):
+                        v = f'.{v.lstrip('.')}'
+                    if v and v not in exts:
+                        exts.append(v)
+            except Exception:
+                # Tabla posiblemente inexistente en versiones viejas
+                pass
+
             reglas.append({
-                "extension": ext,
-                "destino_alias": fila[1].lower().strip(),
-                "nombre_regla": fila[2]
+                "id": rid,
+                "extensions": exts if exts else None,
+                "destino_alias": fila[2].lower().strip(),
+                "nombre_regla": fila[3]
             })
 
         conn.close()
@@ -184,16 +206,24 @@ class MotorOrganizadorCore:
         destino_alias = None
         fallback_alias = None
         for regla in reglas:
-            regla_ext = regla["extension"]
-            alias_dest = regla["destino_alias"]
+            alias_dest = regla.get("destino_alias")
             if alias_dest not in destinos:
                 continue
 
-            if regla_ext == ext_archivo:
-                destino_alias = alias_dest
+            regla_exts = regla.get("extensions") or []
+            # Si no hay extensiones definidas, marcar como fallback (comodín)
+            if not regla_exts:
+                if fallback_alias is None:
+                    fallback_alias = alias_dest
+                continue
+
+            # Comparar contra todas las extensiones normalizadas
+            for rext in regla_exts:
+                if rext == ext_archivo:
+                    destino_alias = alias_dest
+                    break
+            if destino_alias:
                 break
-            if regla_ext is None and fallback_alias is None:
-                fallback_alias = alias_dest
 
         if destino_alias is None:
             destino_alias = fallback_alias

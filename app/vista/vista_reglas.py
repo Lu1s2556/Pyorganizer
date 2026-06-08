@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                                QLineEdit, QPushButton, QFrame, QFormLayout, 
                                QGroupBox, QComboBox, QSpinBox, QCheckBox, 
-                               QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox)
+                               QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox, QListWidget, QListWidgetItem)
 from PySide6.QtGui import QFont
 from PySide6.QtCore import Qt
 
@@ -81,20 +81,46 @@ class VistaReglasOrganizacion(QWidget):
         self.input_nombre_regla.setPlaceholderText("Ej: Filtro de Videos")
         self.input_nombre_regla.setStyleSheet(estilo_input)
 
-        # Combo de extensiones categorizadas (evita errores tipográficos)
-        self.combo_extension = QComboBox()
-        self.combo_extension.setStyleSheet(estilo_input + estilo_combo)
-        self.combo_extension.setEditable(False)
-        # Primera opción: cualquiera
-        self.combo_extension.addItem("* (Cualquiera)", None)
-        for cat, exts in EXT_CATALOG.items():
-            # agregar un separador visual
-            self.combo_extension.addItem(f"--- {cat} ---")
-            idx = self.combo_extension.count() - 1
-            self.combo_extension.model().item(idx).setEnabled(False)
-            for ext in exts:
-                display = f"{cat}: {ext}"
-                self.combo_extension.addItem(display, ext)
+        # Selector híbrido: lista de checkboxes + entrada manual
+        self.selector_ext = QWidget()
+        sel_layout = QVBoxLayout(self.selector_ext)
+        sel_layout.setContentsMargins(0,0,0,0)
+        sel_layout.addWidget(QLabel("Selecciona las extensiones para esta regla:"))
+        self.lista_widget = QListWidget()
+        extensiones_comunes = ["pdf", "docx", "xlsx", "pptx", "txt", "png", "jpg", "jpeg", "mp4", "zip", "rar"]
+        for ext in extensiones_comunes:
+            item = QListWidgetItem(ext)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
+            item.setCheckState(Qt.Unchecked)
+            self.lista_widget.addItem(item)
+        sel_layout.addWidget(self.lista_widget)
+        # barra de entrada para extensiones personalizadas
+        layout_personalizado = QHBoxLayout()
+        self.txt_nueva_ext = QLineEdit()
+        self.txt_nueva_ext.setPlaceholderText("Ej: drp, blend, py, sql")
+        self.txt_nueva_ext.setStyleSheet(estilo_input)
+        btn_añadir = QPushButton("+ Añadir")
+        def _añadir():
+            texto = self.txt_nueva_ext.text().strip().lower().lstrip('.')
+            if not texto:
+                return
+            existentes = [self.lista_widget.item(i).text() for i in range(self.lista_widget.count())]
+            if texto in existentes:
+                for i in range(self.lista_widget.count()):
+                    it = self.lista_widget.item(i)
+                    if it.text() == texto:
+                        it.setCheckState(Qt.Checked)
+                        break
+            else:
+                it = QListWidgetItem(texto)
+                it.setFlags(it.flags() | Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
+                it.setCheckState(Qt.Checked)
+                self.lista_widget.addItem(it)
+            self.txt_nueva_ext.clear()
+        btn_añadir.clicked.connect(_añadir)
+        layout_personalizado.addWidget(self.txt_nueva_ext)
+        layout_personalizado.addWidget(btn_añadir)
+        sel_layout.addLayout(layout_personalizado)
 
         # prioridad removida en la nueva fase; mantenemos el campo oculto si se necesita
         self.spin_prioridad = QSpinBox()
@@ -108,7 +134,7 @@ class VistaReglasOrganizacion(QWidget):
 
         layout_form.addRow("Carpeta Objetivo:", self.combo_carpetas)
         layout_form.addRow("Nombre de Regla:", self.input_nombre_regla)
-        layout_form.addRow("Extensión Permitida:", self.combo_extension)
+        layout_form.addRow("Extensiones Permitidas:", self.selector_ext)
         layout_form.addRow("", self.spin_prioridad)
         layout_form.addRow("", self.check_activa)
 
@@ -180,6 +206,15 @@ class VistaReglasOrganizacion(QWidget):
                 carpeta_destino TEXT NOT NULL,
                 activa BOOLEAN DEFAULT 1,
                 fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        # Asegurar existencia de tabla de extensiones normalizada
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS regla_extensiones (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                regla_id INTEGER NOT NULL,
+                extension TEXT NOT NULL,
+                FOREIGN KEY(regla_id) REFERENCES reglas_organizacion(id) ON DELETE CASCADE
             )
         """)
         conn.commit()
@@ -263,9 +298,12 @@ class VistaReglasOrganizacion(QWidget):
         """Ejecuta el INSERT en la tabla reglas_organizacion"""
         carpeta = self.combo_carpetas.currentText()
         nombre = self.input_nombre_regla.text().strip()
-        # Obtener extensión seleccionada desde el combo (userData)
-        ext_data = self.combo_extension.currentData()
-        extension = ext_data.strip().lower().replace(".", "") if ext_data else None
+        # Obtener extensiones seleccionadas desde el widget híbrido
+        extensions = []
+        for i in range(self.lista_widget.count()):
+            it = self.lista_widget.item(i)
+            if it.checkState() == Qt.Checked:
+                extensions.append(it.text().strip().lstrip('.'))
         prioridad = self.spin_prioridad.value()
         activa = 1 if self.check_activa.isChecked() else 0
 
@@ -278,17 +316,33 @@ class VistaReglasOrganizacion(QWidget):
 
         try:
             conn, cursor = self.conectar_db()
+            # Serializar extensiones como cadena sin puntos: "png,jpg,jpeg"
+            ext_serial = ",".join(extensions) if extensions else None
             cursor.execute("""
                 INSERT INTO reglas_organizacion (nombre, extension, carpeta_destino, activa)
                 VALUES (?, ?, ?, ?)
-            """, (nombre, extension if extension else None, carpeta, activa))
+            """, (nombre, ext_serial, carpeta, activa))
             conn.commit()
+            regla_id = cursor.lastrowid
+            # Nota: mantenemos compatibilidad con la persistencia legacy (regla_extensiones)
+            # pero priorizamos la columna serializada en reglas_organizacion.
+            try:
+                if extensions:
+                    for ex in extensions:
+                        norm = ex if ex.startswith('.') else f'.{ex}'
+                        try:
+                            cursor.execute("INSERT INTO regla_extensiones (regla_id, extension) VALUES (?, ?)", (regla_id, norm))
+                        except Exception:
+                            pass
+                    conn.commit()
+            except Exception:
+                pass
             conn.close()
 
             # Limpiar entradas del formulario
             self.input_nombre_regla.clear()
             try:
-                self.combo_extension.setCurrentIndex(0)
+                self.input_extensiones.clear()
             except Exception:
                 pass
             self.spin_prioridad.setValue(0)

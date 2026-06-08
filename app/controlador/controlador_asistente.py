@@ -80,6 +80,137 @@ class AsistenteVigiData:
         except Exception as e:
             print(f"Error al sincronizar en memoria reglas de Fase 2: {e}")
 
+    # ------------------ Nuevo: IA intención + extractor de entidades ------------------
+    def procesar_comando_ia(self, texto_usuario: str) -> str:
+        texto_limpio = (texto_usuario or "").strip().lower()
+        if not texto_limpio:
+            return "Escribe un comando para ayudarte."
+
+        if not self.modelo:
+            return "❌ El motor de IA no está disponible. Ejecuta el entrenamiento primero."
+
+        try:
+            etiquetas, probs = self.modelo.predict(texto_limpio, k=1)
+            etiqueta = etiquetas[0]
+        except Exception as e:
+            return f"⚠️ Error al predecir intención: {e}"
+
+        if etiqueta == '__label__config_origen':
+            return self._ia_configurar_origen(texto_limpio)
+        if etiqueta == '__label__config_destino':
+            return self._ia_configurar_destino(texto_limpio)
+        if etiqueta == '__label__config_regla':
+            return self._ia_configurar_regla(texto_limpio)
+
+        return "🤔 No te entendí del todo. ¿Puedes especificar la carpeta o la regla?"
+
+    def _ia_configurar_origen(self, texto: str) -> str:
+        # Detectar ruta base por atajos conocidos
+        ruta_base = None
+        for atajo, path_fisico in self.rutas_atajo.items():
+            if atajo in texto:
+                ruta_base = Path(path_fisico)
+                break
+
+        if not ruta_base:
+            return "🔍 Dime si es 'Descargas', 'Escritorio' o 'Documentos' para añadir el origen."
+
+        # Buscar si el usuario solicita crear una subcarpeta
+        patron_carpeta = r"(?:llamada|carpeta|para|nombre)\s+([a-zA-Z0-9_ñáéíóú]+)"
+        match = re.search(patron_carpeta, texto)
+        carpeta_final = ruta_base
+        mensaje_adicional = ""
+        if match:
+            nombre_subcarpeta = match.group(1).strip()
+            carpeta_final = ruta_base / nombre_subcarpeta
+            try:
+                if not carpeta_final.exists():
+                    carpeta_final.mkdir(parents=True, exist_ok=True)
+                    mensaje_adicional = f" (No existía '{nombre_subcarpeta}', la creé por ti)"
+                else:
+                    mensaje_adicional = f" (La carpeta '{nombre_subcarpeta}' ya existía)"
+            except Exception as e:
+                return f"❌ Intenté crear la subcarpeta '{nombre_subcarpeta}' pero falló: {e}"
+
+        # Registrar en la BD usando API existente
+        try:
+            alias = carpeta_final.name
+            ok = False
+            if getattr(self.modelo_org, 'gestor', None):
+                ok = self.modelo_org.gestor.agregar_carpeta_monitoreada(str(carpeta_final), alias)
+            elif hasattr(self.modelo_org, 'agregar_carpeta_monitoreada'):
+                ok = self.modelo_org.agregar_carpeta_monitoreada(str(carpeta_final), alias)
+            if ok:
+                try:
+                    self.actualizar_reglas_en_memoria()
+                except Exception:
+                    pass
+                try:
+                    app_signals.stats_changed.emit()
+                except Exception:
+                    pass
+                return f"✅ ¡Origen configurado! Ahora vigilo: {carpeta_final}{mensaje_adicional}"
+            return f"❌ No pude registrar '{carpeta_final}' como origen (ya existe o fallo en BD)."
+        except Exception as e:
+            return f"❌ Error guardando origen en BD: {e}"
+
+    def _ia_configurar_destino(self, texto: str) -> str:
+        ruta_base = None
+        for atajo, path_fisico in self.rutas_atajo.items():
+            if atajo in texto:
+                ruta_base = Path(path_fisico)
+                break
+
+        patron_nombre = r"(?:llamado|carpeta|destino)\s+([a-zA-Z0-9_ñáéíóú]+)"
+        match = re.search(patron_nombre, texto)
+        if match and ruta_base:
+            destino_final = ruta_base / match.group(1).strip()
+        elif ruta_base:
+            destino_final = ruta_base
+        else:
+            return "🔍 Dime en qué ubicación (Escritorio, Descargas, Documentos) deseas establecer el destino."
+
+        try:
+            destino_final.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            return f"❌ No pude crear/verificar la carpeta de destino: {e}"
+
+        try:
+            alias = destino_final.name
+            ok = False
+            if getattr(self.modelo_org, 'gestor', None):
+                ok = self.modelo_org.gestor.agregar_directorio_destino(str(destino_final), alias)
+            elif hasattr(self.modelo_org, 'agregar_directorio_destino'):
+                ok = self.modelo_org.agregar_directorio_destino(str(destino_final), alias)
+            if ok:
+                try:
+                    app_signals.stats_changed.emit()
+                except Exception:
+                    pass
+                return f"🎯 Destino listo. Los archivos se enviarán a: {destino_final}"
+            return f"❌ No se pudo registrar destino en BD: {destino_final}"
+        except Exception as e:
+            return f"❌ Error registrando destino en BD: {e}"
+
+    def _ia_configurar_regla(self, texto: str) -> str:
+        # Captura extensiones en la frase
+        patron_ext = r"\b\.?([a-zA-Z0-9]{2,5})\b"
+        extensiones_detectadas = re.findall(patron_ext, texto)
+        palabras_bloqueadas = set(["para", "crea", "una", "tipo", "con", "los", "las", "por", "regla", "archivos"]) 
+        extensiones_limpias = [e.lower().lstrip('.') for e in extensiones_detectadas if e.lower() not in palabras_bloqueadas]
+        # Deduplicar conservando orden
+        seen = set(); extensiones_unicas = []
+        for e in extensiones_limpias:
+            if e not in seen and len(e) >= 2:
+                seen.add(e); extensiones_unicas.append(e)
+
+        if not extensiones_unicas:
+            return "🔍 No logré identificar las extensiones en tu frase. Di por ejemplo: 'regla para pdf y docx'."
+
+        cadena_extensiones = ",".join(extensiones_unicas)
+        return f"📝 He preparado una regla multi-extensión para: [{cadena_extensiones}]. ¿A qué carpeta de destino deseas vincularla?"
+
+
     def procesar_peticion(self, texto):
         """Determina la intención semántica del usuario y enruta el flujo operativo"""
         texto = (texto or "").strip()
@@ -98,6 +229,10 @@ class AsistenteVigiData:
 
         if probabilidad < self.umbral_confianza:
             return f"🤔 No tengo certeza suficiente ({probabilidad*100:.1f}%). Requiero mínimo {self.umbral_confianza*100:.0f}%."
+
+        # Si la etiqueta corresponde al nuevo pipeline de configuración, enrutar allí
+        if etiqueta.startswith('config_'):
+            return self.procesar_comando_ia(texto)
 
         # Confirmar creación y registro: 'confirmar crear destino <alias> en <ruta>'
         m_confirm_dest = re.search(r'^confirmar\s+crear\s+destin[ao]\s+([\w\d_-]+)\s+(?:en\s+)?(.+)', texto, re.IGNORECASE)

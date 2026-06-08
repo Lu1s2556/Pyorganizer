@@ -109,6 +109,16 @@ class GestorBaseDatos:
             )
         """)
 
+        # Tabla para mapear múltiples extensiones por regla (1 regla -> N extensiones)
+        self.db.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS regla_extensiones (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                regla_id INTEGER NOT NULL,
+                extension TEXT NOT NULL,
+                FOREIGN KEY(regla_id) REFERENCES reglas_organizacion(id) ON DELETE CASCADE
+            )
+        """)
+
         # Tabla directorios_destino (carpetas designadas por reglas u usuario)
         self.db.cursor.execute("""
             CREATE TABLE IF NOT EXISTS directorios_destino (
@@ -153,6 +163,11 @@ class GestorBaseDatos:
             # Ejecutar migración para eliminar columna 'prioridad' si existe
             try:
                 self.migrar_remover_prioridad_reglas()
+            except Exception:
+                pass
+            # Migración para normalizar extensiones a tabla regla_extensiones
+            try:
+                self.migrar_regla_extensiones()
             except Exception:
                 pass
             # Asegurar compatibilidad de columnas en directorios_destino
@@ -216,6 +231,47 @@ class GestorBaseDatos:
         self.db.confirmar()
         print("✓ Migración: columna 'prioridad' removida de reglas_organizacion")
         return True
+
+    def migrar_regla_extensiones(self):
+        """Migra valores de la columna 'extension' en reglas_organizacion hacia tabla regla_extensiones.
+        Si no existe la tabla regla_extensiones la crea. Mantiene compatibilidad con DB antiguas.
+        """
+        # Asegurar existencia de la tabla regla_extensiones
+        self.db.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS regla_extensiones (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                regla_id INTEGER NOT NULL,
+                extension TEXT NOT NULL,
+                FOREIGN KEY(regla_id) REFERENCES reglas_organizacion(id) ON DELETE CASCADE
+            )
+        """)
+
+        # Verificar si existen filas en reglas_organizacion con valor en 'extension'
+        try:
+            self.db.cursor.execute("PRAGMA table_info(reglas_organizacion)")
+            cols = [r['name'] for r in self.db.cursor.fetchall()]
+            if 'extension' not in cols:
+                return False
+
+            self.db.cursor.execute("SELECT id, extension FROM reglas_organizacion WHERE extension IS NOT NULL AND extension != ''")
+            filas = self.db.cursor.fetchall()
+            for fila in filas:
+                rid = fila['id']
+                ext_val = fila['extension']
+                if not ext_val:
+                    continue
+                # soportar múltiples extensiones separadas por comas en la columna legacy
+                parts = [p.strip() for p in str(ext_val).split(',') if p.strip()]
+                for p in parts:
+                    normalized = p if p.startswith('.') else f'.{p.lstrip('.')}'
+                    try:
+                        self.db.cursor.execute("INSERT INTO regla_extensiones (regla_id, extension) VALUES (?, ?)", (rid, normalized))
+                    except Exception:
+                        pass
+            self.db.confirmar()
+            return True
+        except Exception:
+            return False
 
     def registrar_operacion(self, nombre_archivo, extension, ruta_origen, ruta_destino, tipo_operacion, tamano_bytes=0, usuario='sistema', estado='completado'):
         try:

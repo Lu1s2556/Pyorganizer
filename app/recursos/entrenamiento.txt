@@ -98,3 +98,22 @@ __label__crear crear destino Proyectos en mis proyectos
 __label__crear crear destino Respaldos en respaldos
 __label__crear crear destino USB en mi pendrive
 __label__crear crear destino FotosFamilia en fotos
+
+# Intención: Agregar Carpetas de Origen (Monitoreo)
+__label__config_origen monitorea la carpeta de descargas
+__label__config_origen añade descargas como origen
+__label__config_origen vigila el escritorio y crea una carpeta llamada recibos
+__label__config_origen pon la carpeta documentos como origen creando la carpeta universidad
+__label__config_origen añade un nuevo origen en descargas con una carpeta para facturas
+
+# Intención: Agregar Carpetas de Destino
+__label__config_destino guarda las cosas en la carpeta respaldos
+__label__config_destino añade un nuevo destino llamado organizados en mi escritorio
+__label__config_destino establece la ruta d:/archivos como destino
+__label__config_destino agrega la carpeta fotos como destino de organizacion
+
+# Intención: Crear Reglas Automáticas (Multi-extensión)
+__label__config_regla crea una regla para los archivos pdf y docx
+__label__config_regla asigna una regla para las extensiones png y jpg
+__label__config_regla asocia los archivos de tipo zip y rar
+__label__config_regla genera una regla de organizacion para mp4
