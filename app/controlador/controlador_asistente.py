@@ -493,13 +493,58 @@ class AsistenteVigiData:
             except Exception as e:
                 return f"❌ Error listando: {e}"
 
+        # INTENCIÓN: ESTADÍSTICAS (nuevo)
+        if etiqueta == "estadisticas":
+            try:
+                stats = self.modelo_org.obtener_estadisticas()
+                total = stats.get('total_operaciones', 0)
+                operaciones_hoy = stats.get('operaciones_hoy', 0)
+                por_tipo = stats.get('por_tipo', {})
+                total_bytes = stats.get('total_bytes', 0)
+                lines = [f"📊 Reporte: Operaciones totales: {total}", f"Hoy: {operaciones_hoy} operaciones", f"Almacenamiento procesado: {total_bytes} bytes"]
+                for k, v in por_tipo.items():
+                    lines.append(f"- {k}: {v}")
+                return "\n".join(lines)
+            except Exception as e:
+                return f"❌ Error obteniendo estadísticas: {e}"
+
+        # INTENCIÓN: CONFIGURACIÓN (nuevo)
+        if etiqueta == "configuracion":
+            # Ejemplo: 'cambia el destino de descargas a D:/Respaldos' o 'ajusta la ruta de descargas a respaldos'
+            m_conf = re.search(r"(?:cambia|ajusta|configura|establece|modifica).*(?:destin[ao]|ruta).*descargas.*(?:a|en|hacia)\s*(.+)$", texto, re.IGNORECASE)
+            if m_conf:
+                ruta_raw = m_conf.group(1).strip().strip('"').strip("'")
+                ruta = self.rutas_atajo.get(ruta_raw.lower(), ruta_raw)
+                ruta = os.path.expanduser(ruta)
+                ruta_path = Path(ruta)
+                if not ruta_path.is_absolute() and not ruta_path.exists():
+                    ruta_path = Path.home() / ruta
+                ruta = str(ruta_path)
+                try:
+                    ruta_path.mkdir(parents=True, exist_ok=True)
+                except Exception:
+                    pass
+                try:
+                    ok = False
+                    if hasattr(self.modelo_org, 'guardar_configuracion'):
+                        ok = self.modelo_org.guardar_configuracion('ruta_default_descargas', ruta)
+                    if ok:
+                        return f"✅ Ruta por defecto de Descargas actualizada a: {ruta}"
+                    else:
+                        return f"❌ No pude guardar la configuración. Intenta manualmente."
+                except Exception as e:
+                    return f"❌ Error al guardar configuración: {e}"
+            return "🔍 Indica la ruta de descargas. Ej: 'cambia el destino de descargas a D:/Respaldos'"
+
         # INTENCIÓN: CREAR CARPETA
         if etiqueta == "crear":
-            match = re.search(r'crea.*carpeta.*(?:llamada|llamado)\s+([\w\d_-]+)\s+(?:en|en el|en la)\s+(.+)', texto, re.IGNORECASE)
+            match = re.search(r"crea.*carpeta.*(?:llamada|llamado)\s+\"?([^\"']+?)\"?\s+(?:en\s+(?:el\s+|la\s+)?)(.+)$", texto, re.IGNORECASE)
             if match:
                 nombre_carpeta = match.group(1).strip()
                 destino_alias = match.group(2).strip().lower()
-                ruta_padre = self.rutas_atajo.get(destino_alias, self.rutas_atajo["escritorio"])
+                ruta_padre = self.rutas_atajo.get(destino_alias, None)
+                if ruta_padre is None:
+                    ruta_padre = Path.home() / destino_alias
                 return self.crear_carpeta_intuitiva(ruta_padre, nombre_carpeta)
             return "❌ Formato no reconocido. Ej: 'crea una carpeta llamada unellez en documentos'."
 

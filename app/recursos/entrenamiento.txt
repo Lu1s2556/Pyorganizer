@@ -62,30 +62,6 @@ __label__mover mueve todos los docx a mis proyectos
 __label__mover mueve png a fotos
 __label__mover traspasa los archivos txt a respaldos
 
-__label__borrar elimina la carpeta Temporal del escritorio
-__label__borrar borra la carpeta Vieja del escritorio
-__label__borrar elimina el directorio basura del escritorio
-__label__borrar borra la carpeta Anuncios del escritorio
-__label__borrar elimina la carpeta Prueba del escritorio
-__label__borrar borra la carpeta Antigua del escritorio
-__label__borrar elimina el directorio Copias del escritorio
-__label__borrar borra la carpeta Respaldo del escritorio
-__label__borrar elimina la carpeta Descargas del escritorio
-__label__borrar borra la carpeta SinUso del escritorio
-__label__borrar elimina la carpeta ProyectoViejo del escritorio
-__label__borrar borra la carpeta DocumentosOld del escritorio
-__label__borrar elimina la carpeta Vieja de Documentos
-__label__borrar borra la carpeta Antigua de Documentos
-__label__borrar elimina el directorio basura de Documentos
-__label__borrar borra la carpeta Prueba de Documentos
-__label__borrar elimina la carpeta Temporal de Documentos
-__label__borrar borra la carpeta Vieja de Documentos
-__label__borrar elimina la carpeta Copias de Documentos
-__label__borrar borra la carpeta Respaldo de Documentos
-__label__borrar elimina la carpeta Descargas de Documentos
-__label__borrar borra la carpeta SinUso de Documentos
-__label__borrar elimina la carpeta ProyectoViejo de Documentos
-__label__borrar borra la carpeta DocumentosOld de Documentos
 
 # Ejemplos para crear y registrar destinos (crear destino <alias> en <ruta>)
 __label__crear crear destino Fotos en C:/Users/usuario/Imágenes
@@ -117,3 +93,15 @@ __label__config_regla crea una regla para los archivos pdf y docx
 __label__config_regla asigna una regla para las extensiones png y jpg
 __label__config_regla asocia los archivos de tipo zip y rar
 __label__config_regla genera una regla de organizacion para mp4
+__label__estadisticas muéstrame el reporte de hoy.
+__label__configuracion cambia el destino de descargas.
+__label__configuracion ajusta la ruta de descargas a respaldos
+__label__configuracion configura descargas en D:/Respaldos
+__label__configuracion establece la carpeta de descargas en Documentos/Backup
+__label__configuracion cambia la carpeta de descargas a mi pendrive
+__label__configuracion modifica el destino de descargas a respaldos
+__label__estadisticas muéstrame el reporte de hoy.
+__label__estadisticas dame las estadísticas del día
+__label__estadisticas quiero ver el resumen de hoy
+__label__estadisticas muestra las métricas recientes
+__label__estadisticas enséñame el informe diario

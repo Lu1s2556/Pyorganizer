@@ -1,10 +1,9 @@
-
 import sys
 from pathlib import Path
 from datetime import datetime
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                                QLabel, QPushButton, QFrame, QGridLayout, 
-                               QScrollArea, QLineEdit, QApplication, QGraphicsDropShadowEffect,
+                               QScrollArea, QLineEdit, QApplication,
                                QStackedWidget, QMessageBox)
 from PySide6.QtCore import Qt, QSize, QThread, Signal, QTimer
 from PySide6.QtGui import QColor, QFont, QPainter
@@ -20,18 +19,41 @@ from app.vista.vista_reglas import VistaReglasOrganizacion
 from app.vista.vista_configuracion import VistaConfiguracionGlobal 
 
 class TarjetaMetrica(QFrame):
-    """Componente para las tarjetas de estadísticas superiores"""
+    """Componente para las tarjetas de estadísticas superiores optimizado para bajo consumo"""
     def __init__(self, titulo, valor, color, parent=None):
         super().__init__(parent)
         self.setMinimumHeight(120)
-        self.setStyleSheet(f"background: #181818; border-radius: 10px; padding: 15px;")
-        l = QVBoxLayout(self)
-        t = QLabel(titulo); t.setStyleSheet("color: #aaaaaa; font-size: 11px; font-weight: bold;"); t.setAlignment(Qt.AlignCenter)
-        self.valor_label = QLabel(valor); self.valor_label.setStyleSheet(f"color: {color}; font-size: 32px; font-weight: bold; margin: 5px 0;"); self.valor_label.setAlignment(Qt.AlignCenter)
-        l.addWidget(t); l.addWidget(self.valor_label)
+        # Transparencia ligera con RGBA para evitar consumo de RAM por sombras complejas
+        # Borde lateral amarillo para un toque moderno de producción
+        borde_izq = "border-left: 4px solid #eab308;" if color == "#eab308" else "border-left: 4px solid #333333;"
+        if color == "white": borde_izq = "border-left: 4px solid #ffffff;"
+        if color == "#22c55e": borde_izq = "border-left: 4px solid #22c55e;"
+        
+        self.setStyleSheet(f"""
+            QFrame {{
+                background-color: rgba(24, 24, 24, 0.85); 
+                border-radius: 8px; 
+                {borde_izq}
+            }}
+        """)
+        
+        distribucion = QVBoxLayout(self)
+        distribucion.setContentsMargins(20, 15, 20, 15)
+        
+        etiqueta_titulo = QLabel(titulo)
+        etiqueta_titulo.setStyleSheet("color: #a3a3a3; font-size: 11px; font-weight: 700; border: none; background: transparent;")
+        etiqueta_titulo.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        
+        self.etiqueta_valor = QLabel(valor)
+        self.etiqueta_valor.setStyleSheet(f"color: {color}; font-size: 34px; font-weight: 800; border: none; background: transparent;")
+        self.etiqueta_valor.setAlignment(Qt.AlignLeft | Qt.AlignBottom)
+        
+        distribucion.addWidget(etiqueta_titulo)
+        distribucion.addStretch()
+        distribucion.addWidget(self.etiqueta_valor)
 
     def actualizar_valor(self, valor):
-        self.valor_label.setText(valor)
+        self.etiqueta_valor.setText(valor)
 
 
 class DashboardOrganizador(QMainWindow):
@@ -41,514 +63,541 @@ class DashboardOrganizador(QMainWindow):
         self.escaneos_ejecutados = 0
         self.ultimo_escaneo = None
         
-        # === PASO 4: CONTROL DE EXCLUSIÓN MUTUA / CONCURRENCIA ===
+        # Control de concurrencia
         self.escaneo_en_progreso = False
-        self.chat_expandido = True 
         
         self.setWindowTitle("PyOrganizer - Panel de Control")
         self.resize(1200, 800)
-        # Evitar forzar maximizado en sistemas multi-monitor que causan errores de geometría
-        # Mostrar la ventana en tamaño predeterminado y permitir al usuario maximizar manualmente
-        self.setStyleSheet("QMainWindow { background-color: #0c0c0c; }")
+        # Fondo oscuro principal
+        self.setStyleSheet("QMainWindow { background-color: #09090b; }")
 
         self.central = QWidget()
         self.setCentralWidget(self.central)
-        self.main_layout = QHBoxLayout(self.central)
-        self.main_layout.setContentsMargins(0,0,0,0)
-        self.main_layout.setSpacing(0)
+        self.distribucion_principal = QHBoxLayout(self.central)
+        self.distribucion_principal.setContentsMargins(0,0,0,0)
+        self.distribucion_principal.setSpacing(0)
 
         # Contenedor Multi-vista para alternar los paneles derechos
-        self.content_stack = QStackedWidget()
+        self.pila_vistas = QStackedWidget()
 
-        self.init_sidebar()
-        self.init_content_views() 
-        self.init_chat_floating()
+        self.inicializar_barra_lateral()
+        self.inicializar_chat_asistente()
+        self.inicializar_vistas_contenido() 
 
-        # Conectar señal global para refrescar estadísticas cuando cambien
+        # Conectar señal global para refrescar estadísticas
         try:
             app_signals.stats_changed.connect(self.refrescar_panel_resumen)
-        except Exception:
-            pass
-
-        # Refrescar inmediatamente las estadísticas reales al iniciar
-        try:
             self.refrescar_panel_resumen()
         except Exception:
             pass
 
-        # Mensaje de bienvenida automático
+        # Mensajes iniciales del sistema
         try:
-            self.msg_l.insertWidget(self.msg_l.count()-1, QLabel("<b>Sistema:</b> Hola, ¿cómo te puedo ayudar?", styleSheet="color: white; background: #222; padding: 8px; border-radius: 5px;"))
-            self.msg_l.insertWidget(self.msg_l.count()-1, QLabel("<b>Sistema:</b> Escribe /ayuda si no sabes qué comando usar.", styleSheet="color: white; background: #222; padding: 8px; border-radius: 5px;"))
+            self.agregar_mensaje_sistema("Hola, ¿cómo te puedo ayudar?")
+            self.agregar_mensaje_sistema("Escribe /ayuda si no sabes qué comando usar.")
         except Exception:
             pass
 
-        # Iniciar Watchdog en diferido para evitar congelar UI al inicio
+        # Iniciar Watchdog en diferido
         try:
             QTimer.singleShot(3000, self.iniciar_watchdog)
         except Exception:
             pass
 
-        # === PASO 3 y 4: PROGRAMACIÓN DEL QTIMER GLOBAL DE ALTA FRECUENCIA (20 SEG) ===
+        # Temporizador global de escaneo
         try:
-            # Cambiado a 60s cooldown para reducir carga en sistemas modestos
-            self.timer_escaneo_20s = QTimer(self)
-            self.timer_escaneo_20s.timeout.connect(self.iniciar_escaneo)
-            self.timer_escaneo_20s.start(60000)  # 60000 ms = 60 segundos
+            self.temporizador_escaneo = QTimer(self)
+            self.temporizador_escaneo.timeout.connect(self.iniciar_escaneo)
+            self.temporizador_escaneo.start(60000) 
         except Exception as e:
             print(f"Error al inicializar el temporizador global: {e}")
 
-        # === PASO 1: ARRANQUE Y ACTIVACIÓN AUTOMÁTICA AL INICIAR LA UI ===
+        # Arranque automático al iniciar
         QTimer.singleShot(3000, self.iniciar_escaneo)
+
+    def agregar_mensaje_sistema(self, texto):
+        etiqueta = QLabel(f"<b>Sistema:</b> {texto}")
+        etiqueta.setStyleSheet("color: #e4e4e7; background-color: rgba(39, 39, 42, 0.8); padding: 10px; border-radius: 6px;")
+        etiqueta.setWordWrap(True)
+        self.lista_mensajes.insertWidget(self.lista_mensajes.count()-1, etiqueta)
 
     def iniciar_watchdog(self):
         try:
             from app.controlador.watcher_thread import WatcherThread
-            self.watchdog = WatcherThread(self.asistente.modelo_org.db_path)
+            self.perro_guardian = WatcherThread(self.asistente.modelo_org.db_path)
             try:
-                # Intentar conectar señales opcionales de compatibilidad
-                self.watchdog._worker.move_result.connect(self._on_move_result)
+                self.perro_guardian._worker.move_result.connect(self.al_mover_archivo)
             except Exception:
                 pass
             try:
-                self.watchdog._worker.file_ready.connect(self.asistente.procesar_archivo_nuevo)
+                self.perro_guardian._worker.file_ready.connect(self.asistente.procesar_archivo_nuevo)
             except Exception:
                 pass
-            self.watchdog.start()
+            self.perro_guardian.start()
         except Exception:
             pass
 
-    def init_sidebar(self):
-        """Barra lateral izquierda adaptada según el plan corporativo global"""
-        sidebar = QFrame(); sidebar.setFixedWidth(240)
-        sidebar.setStyleSheet("background-color: #121212; border-right: 1px solid #222;")
-        l = QVBoxLayout(sidebar)
+    def inicializar_barra_lateral(self):
+        """Barra lateral izquierda con transparencia y acentos amarillos"""
+        barra_lateral = QFrame()
+        barra_lateral.setFixedWidth(260)
+        barra_lateral.setStyleSheet("background-color: rgba(15, 15, 15, 0.95); border-right: 1px solid rgba(255, 255, 255, 0.05);")
+        distribucion_lateral = QVBoxLayout(barra_lateral)
+        distribucion_lateral.setContentsMargins(0, 0, 0, 0)
         
-        logo = QLabel("📁 PyOrganizer"); logo.setStyleSheet("color: white; font-size: 20px; font-weight: bold; margin: 25px;")
-        l.addWidget(logo)
+        # Logo y Título
+        contenedor_logo = QWidget()
+        distribucion_logo = QVBoxLayout(contenedor_logo)
+        distribucion_logo.setContentsMargins(25, 35, 25, 25)
+        etiqueta_logo = QLabel("📁 PyOrganizer")
+        etiqueta_logo.setStyleSheet("color: #ffffff; font-size: 22px; font-weight: 800; border: none;")
+        distribucion_logo.addWidget(etiqueta_logo)
+        distribucion_lateral.addWidget(contenedor_logo)
 
-        # Estilo unificado de botones de la barra lateral
-        estilo_btn = "QPushButton { background: #121212; color: white; text-align: left; padding: 12px; border: none; } QPushButton:hover { background: #eab308; color: white; }"
+        # Estilos de botones
+        self.estilo_boton_base = """
+            QPushButton { 
+                background: transparent; color: #a3a3a3; text-align: left; 
+                padding: 14px 25px; border: none; font-size: 13px; font-weight: 600;
+            } 
+            QPushButton:hover { 
+                background: rgba(234, 179, 8, 0.1); color: #eab308; 
+            }
+        """
+        self.estilo_boton_activo = """
+            QPushButton { 
+                background: rgba(234, 179, 8, 0.15); color: #eab308; 
+                text-align: left; padding: 14px 25px; border: none; 
+                border-left: 4px solid #eab308; font-size: 13px; font-weight: 700;
+            }
+        """
 
-        # Botón 0: Panel Resumen (Activo por defecto)
-        self.btn_resumen = QPushButton("   Panel Resumen")
-        self.btn_resumen.setStyleSheet("background: #eab308; color: white; text-align: left; padding: 12px; border-radius: 5px; font-weight: bold;")
-        self.btn_resumen.clicked.connect(lambda: self.cambiar_vista(0, self.btn_resumen))
-        l.addWidget(self.btn_resumen)
+        # Botones de navegación
+        self.boton_resumen = QPushButton("Panel Resumen")
+        self.boton_resumen.setStyleSheet(self.estilo_boton_activo)
+        self.boton_resumen.clicked.connect(lambda: self.cambiar_vista(0, self.boton_resumen))
+        distribucion_lateral.addWidget(self.boton_resumen)
 
-        # Botón 1: CONFIGURACIÓN GLOBAL 
-        self.btn_config_global = QPushButton("  Configuración Global")
-        self.btn_config_global.setStyleSheet(estilo_btn)
-        self.btn_config_global.clicked.connect(lambda: self.cambiar_vista(1, self.btn_config_global))
-        l.addWidget(self.btn_config_global)
+        self.boton_configuracion = QPushButton("Configuración Global")
+        self.boton_configuracion.setStyleSheet(self.estilo_boton_base)
+        self.boton_configuracion.clicked.connect(lambda: self.cambiar_vista(1, self.boton_configuracion))
+        distribucion_lateral.addWidget(self.boton_configuracion)
         
-        # Botón 2: Reglas de organización
-        self.btn_reglas = QPushButton("   Reglas")
-        self.btn_reglas.setStyleSheet(estilo_btn)
-        self.btn_reglas.clicked.connect(lambda: self.cambiar_vista(2, self.btn_reglas))
-        l.addWidget(self.btn_reglas)
+        self.boton_reglas = QPushButton("Reglas de Organización")
+        self.boton_reglas.setStyleSheet(self.estilo_boton_base)
+        self.boton_reglas.clicked.connect(lambda: self.cambiar_vista(2, self.boton_reglas))
+        distribucion_lateral.addWidget(self.boton_reglas)
 
-        l.addStretch()
+        distribucion_lateral.addStretch()
         
-        # === PLAN DE AJUSTE: BOTÓN MIGRADO E INICIALIZADO EN LA SIDEBAR GLOBAL ===
-        self.btn_scan = QPushButton("ESCANEAR AHORA")
-        self.btn_scan.setStyleSheet("QPushButton { background: #eab308; color: black; font-weight: bold; padding: 12px; border-radius: 5px; margin: 15px; } QPushButton:hover { background: #c79906; } QPushButton:disabled { background: #262626; color: #666666; }")
-        self.btn_scan.clicked.connect(self.ejecutar_escaneo_asincrono)
-        l.addWidget(self.btn_scan)
+        # Botón de Escaneo
+        contenedor_escaneo = QWidget()
+        distribucion_escaneo = QVBoxLayout(contenedor_escaneo)
+        distribucion_escaneo.setContentsMargins(25, 25, 25, 30)
+        self.boton_escanear = QPushButton("ESCANEAR AHORA")
+        self.boton_escanear.setStyleSheet("""
+            QPushButton { 
+                background: #eab308; color: #000000; font-weight: 800; font-size: 12px;
+                padding: 14px; border-radius: 6px; border: none;
+            } 
+            QPushButton:hover { background: #facc15; } 
+            QPushButton:disabled { background: rgba(255,255,255,0.1); color: #555555; }
+        """)
+        self.boton_escanear.clicked.connect(self.ejecutar_escaneo_asincrono)
+        distribucion_escaneo.addWidget(self.boton_escanear)
+        distribucion_lateral.addWidget(contenedor_escaneo)
 
-        self.main_layout.addWidget(sidebar)
+        self.distribucion_principal.addWidget(barra_lateral)
 
-    def init_content_views(self):
-        """Asigna y empaqueta las secciones dentro del QStackedWidget derecho"""
-        self.vista_dashboard = self.crear_panel_resumen_original()
+    def inicializar_vistas_contenido(self):
+        """Asigna y empaqueta las secciones dentro del QStackedWidget"""
+        self.vista_panel = self.crear_panel_resumen()
         
         self.vista_configuracion = VistaConfiguracionGlobal(
             asistente=self.asistente,
-            callback_regresar=lambda: self.cambiar_vista(0, self.btn_resumen)
+            callback_regresar=lambda: self.cambiar_vista(0, self.boton_resumen)
         )
         
-        self.vista_reglas_ia = VistaRules = VistaReglasOrganizacion(
+        self.vista_reglas = VistaReglasOrganizacion(
             asistente=self.asistente, 
-            callback_regresar=lambda: self.cambiar_vista(0, self.btn_resumen)
+            callback_regresar=lambda: self.cambiar_vista(0, self.boton_resumen)
         )
 
-        self.content_stack.addWidget(self.vista_dashboard)     # Índice 0
-        self.content_stack.addWidget(self.vista_configuracion) # Índice 1
-        self.content_stack.addWidget(self.vista_reglas_ia)     # Índice 2
+        self.pila_vistas.addWidget(self.vista_panel)     
+        self.pila_vistas.addWidget(self.vista_configuracion) 
+        self.pila_vistas.addWidget(self.vista_reglas)     
 
-        self.main_layout.addWidget(self.content_stack)
+        self.distribucion_principal.addWidget(self.pila_vistas)
 
     def cambiar_vista(self, indice, boton_activo):
-        """Efectúa la transición de la pantalla sin romper la persistencia del temporizador"""
-        self.content_stack.setCurrentIndex(indice)
+        self.pila_vistas.setCurrentIndex(indice)
         
-        estilo_base = "QPushButton { background: #121212; color: white; text-align: left; padding: 12px; border: none; } QPushButton:hover { background: #eab308; color: white; }"
-        estilo_activo = "background: #eab308; color: white; text-align: left; padding: 12px; border-radius: 5px; font-weight: bold;"
+        self.boton_resumen.setStyleSheet(self.estilo_boton_base)
+        self.boton_configuracion.setStyleSheet(self.estilo_boton_base)
+        self.boton_reglas.setStyleSheet(self.estilo_boton_base)
         
-        self.btn_resumen.setStyleSheet(estilo_base)
-        self.btn_config_global.setStyleSheet(estilo_base)
-        self.btn_reglas.setStyleSheet(estilo_base)
+        boton_activo.setStyleSheet(self.estilo_boton_activo)
+
+    def crear_panel_resumen(self):
+        """Estructura e interfaz del Panel de Control principal"""
+        contenido = QWidget()
+        distribucion = QVBoxLayout(contenido)
+        distribucion.setContentsMargins(40, 40, 40, 40)
+        distribucion.setSpacing(30)
+
+        # Cabecera
+        cabecera = QVBoxLayout()
+        cabecera.setSpacing(5)
+        titulo = QLabel("Panel de Control")
+        titulo.setStyleSheet("color: #ffffff; font-size: 28px; font-weight: 800; letter-spacing: -0.5px;")
+        subtitulo = QLabel("Motor de ordenamiento cíclico optimizado")
+        subtitulo.setStyleSheet("color: #a3a3a3; font-size: 14px;")
+        cabecera.addWidget(titulo)
+        cabecera.addWidget(subtitulo)
+        distribucion.addLayout(cabecera)
+
+        # Grid de Tarjetas (Métricas)
+        cuadricula = QGridLayout()
+        cuadricula.setSpacing(20)
         
-        boton_activo.setStyleSheet(estilo_activo)
-
-    def crear_panel_resumen_original(self):
-        """Estructura e interfaz del Panel de Control original"""
-        content = QWidget()
-        layout = QVBoxLayout(content)
-        layout.setContentsMargins(30, 30, 30, 30)
-
-        head = QVBoxLayout()
-        tit = QLabel("Panel de Control"); tit.setStyleSheet("color: white; font-size: 26px; font-weight: bold;")
-        sub = QLabel("Motor de ordenamiento cíclico optimizado"); sub.setStyleSheet("color: #666; font-size: 14px;")
-        head.addWidget(tit); head.addWidget(sub)
-        layout.addLayout(head)
-
-        grid = QGridLayout()
+        total_mov = "0"
+        total_reglas = "0"
         try:
-            db_path = self.asistente.modelo_org.db_path
-            total_mov = f"{get_total_movidos(db_path):,}"
+            ruta_bd = self.asistente.modelo_org.db_path
+            total_mov = f"{get_total_movidos(ruta_bd):,}"
+            total_reglas = f"{get_total_reglas(ruta_bd):,}"
         except Exception:
-            total_mov = "0"
+            pass
 
-        try:
-            db_path = self.asistente.modelo_org.db_path
-            total_reglas = f"{get_total_reglas(db_path):,}"
-        except Exception:
-            total_reglas = "0"
+        self.tarjeta_archivos = TarjetaMetrica("ARCHIVOS PROCESADOS", total_mov, "#ffffff")
+        self.tarjeta_reglas = TarjetaMetrica("REGLAS DEFINIDAS", total_reglas, "#eab308")
+        self.tarjeta_escaneos = TarjetaMetrica("ESCANEOS EJECUTADOS", str(self.escaneos_ejecutados), "#22c55e")
+        texto_ultimo = self.ultimo_escaneo.strftime("%Y-%m-%d %H:%M:%S") if self.ultimo_escaneo else "Nunca"
+        self.tarjeta_ultimo = TarjetaMetrica("ÚLTIMO ESCANEO", texto_ultimo, "#eab308")
 
-        self.card_archivos = TarjetaMetrica("ARCHIVOS PROCESADOS", total_mov, "white")
-        self.card_reglas = TarjetaMetrica("REGLAS DEFINIDAS", total_reglas, "#eab308")
-        self.card_escaneos = TarjetaMetrica("ESCANEOS EJECUTADOS", str(self.escaneos_ejecutados), "#22c55e")
-        ultimo_texto = self.ultimo_escaneo.strftime("%Y-%m-%d %H:%M:%S") if self.ultimo_escaneo else "Nunca"
-        self.card_ultimo = TarjetaMetrica("ÚLTIMO ESCANEO", ultimo_texto, "#eab308")
+        cuadricula.addWidget(self.tarjeta_archivos, 0, 0)
+        cuadricula.addWidget(self.tarjeta_reglas, 0, 1)
+        cuadricula.addWidget(self.tarjeta_escaneos, 0, 2)
+        cuadricula.addWidget(self.tarjeta_ultimo, 0, 3)
+        distribucion.addLayout(cuadricula)
 
-        grid.addWidget(self.card_archivos, 0, 0)
-        grid.addWidget(self.card_reglas, 0, 1)
-        grid.addWidget(self.card_escaneos, 0, 2)
-        grid.addWidget(self.card_ultimo, 0, 3)
-        layout.addLayout(grid)
+        # Gráfico de barras QtCharts
+        self.vista_grafico_stats = QChartView()
+        self.vista_grafico_stats.setRenderHint(QPainter.Antialiasing)
+        self.vista_grafico_stats.setStyleSheet("background: transparent; border: none;")
 
-        center_h = QHBoxLayout()
+        # Panel de Estadísticas
+        marco_estadisticas = QFrame()
+        marco_estadisticas.setStyleSheet("background-color: rgba(24, 24, 24, 0.6); border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.05);")
+        distribucion_estadisticas = QVBoxLayout(marco_estadisticas)
+        distribucion_estadisticas.setContentsMargins(20, 20, 20, 20)
+        titulo_stats = QLabel("Estadísticas de Extensiones")
+        titulo_stats.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 14px; background: transparent; border: none;")
+        distribucion_estadisticas.addWidget(titulo_stats)
+        distribucion_estadisticas.addWidget(self.vista_grafico_stats)
         
-        chart_f = QFrame(); chart_f.setStyleSheet("background: #181818; border-radius: 10px; border: 1px solid #222;")
-        chart_l = QVBoxLayout(chart_f)
-        chart_l.addWidget(QLabel("Distribución de Archivos por Categoría", styleSheet="color:white; font-weight:bold;"))
-        mock_pie = QLabel("GRÁFICO DE DISTRIBUCIÓN"); mock_pie.setAlignment(Qt.AlignCenter); mock_pie.setStyleSheet("color: #333;")
-        chart_l.addWidget(mock_pie)
-        # Label simple que mostrará los top tipos (texto en lugar de gráfico para compatibilidad rápida)
-        self.tipo_chart_label = QLabel(); self.tipo_chart_label.setStyleSheet("color: white; margin-top: 8px; font-size: 12px;")
-        chart_l.addWidget(self.tipo_chart_label)
+        self.etiqueta_tipos_grafico = QLabel("Sin datos")
+        self.etiqueta_tipos_grafico.setStyleSheet("color: #71717a; font-size: 12px; background: transparent; border: none;")
+        distribucion_estadisticas.addWidget(self.etiqueta_tipos_grafico)
 
-        # Gráfico de barras QtCharts (inicialmente vacío)
-        try:
-            self.chart_view = QChartView()
-            self.chart_view.setRenderHint(self.chart_view.Antialiasing)
-            chart_l.addWidget(self.chart_view)
-        except Exception:
-            self.chart_view = None
-        center_h.addWidget(chart_f, 2)
-
-        act_f = QFrame(); act_f.setStyleSheet("background: #181818; border-radius: 10px; border: 1px solid #222;")
-        act_l = QVBoxLayout(act_f)
-        act_l.addWidget(QLabel("Últimas Acciones", styleSheet="color:white; font-weight:bold;"))
-        self.scroll_act = QScrollArea(); self.scroll_act.setWidgetResizable(True); self.scroll_act.setStyleSheet("border:none;")
-        self.act_cont = QWidget(); self.act_list = QVBoxLayout(self.act_cont); self.act_list.addStretch()
-        self.scroll_act.setWidget(self.act_cont)
-        act_l.addWidget(self.scroll_act)
-        center_h.addWidget(act_f, 1)
+        # Panel de Últimas Acciones
+        marco_acciones = QFrame()
+        marco_acciones.setStyleSheet("background-color: rgba(24, 24, 24, 0.6); border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.05);")
+        distribucion_acciones = QVBoxLayout(marco_acciones)
+        distribucion_acciones.setContentsMargins(20, 20, 20, 20)
+        titulo_acciones = QLabel("Registro de Actividad")
+        titulo_acciones.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 14px; background: transparent; border: none;")
+        distribucion_acciones.addWidget(titulo_acciones)
         
-        layout.addLayout(center_h, 1)
-        return content
+        self.scroll_acciones = QScrollArea()
+        self.scroll_acciones.setWidgetResizable(True)
+        self.scroll_acciones.setStyleSheet("QScrollArea { border: none; background: transparent; } QWidget { background: transparent; }")
+        self.contenedor_acciones = QWidget()
+        self.lista_acciones = QVBoxLayout(self.contenedor_acciones)
+        self.lista_acciones.setContentsMargins(0, 10, 0, 0)
+        self.lista_acciones.setSpacing(6)
+        self.lista_acciones.addStretch()
+        self.scroll_acciones.setWidget(self.contenedor_acciones)
+        distribucion_acciones.addWidget(self.scroll_acciones)
 
-    # === PASO 2 Y 4: MÉTODO PÚBLICO REUTILIZABLE CON EXCLUSIÓN MUTUA ===
+        # Distribución Inferior: Chat Asistente (Integrado directamente) | Estadísticas | Acciones
+        distribucion_inferior = QHBoxLayout()
+        distribucion_inferior.setSpacing(25)
+        
+        # Eliminado el marco redundante "Distribución de Archivos"
+        distribucion_inferior.addWidget(self.widget_asistente, 3) 
+        distribucion_inferior.addWidget(marco_estadisticas, 4)
+        distribucion_inferior.addWidget(marco_acciones, 3)
+
+        distribucion.addLayout(distribucion_inferior, 1)
+        return contenido
+
     def iniciar_escaneo(self):
-        """
-        Lógica centralizada para desplegar el Hilo del motor. Protege el hilo contra
-        ejecuciones simultáneas indeseadas del temporizador o clics manuales.
-        """
+        """Lógica centralizada para desplegar el Hilo del motor organizador."""
         if self.escaneo_en_progreso:
-            return  # Retorno silencioso si ya se encuentra trabajando
+            return  
 
         self.escaneo_en_progreso = True
-        
-        # PASO 5: Actualización del estado visual en la UI
-        self.btn_scan.setEnabled(False)
-        self.btn_scan.setText("ESCANEANDO...")
+        self.boton_escanear.setEnabled(False)
+        self.boton_escanear.setText("PROCESANDO...")
 
         try:
-            # Consumir la clase HiloOrganizador importada desde el motor core modificado
             motor = MotorOrganizadorCore(self.asistente.modelo_org.db_path)
             self.hilo_trabajo = HiloOrganizador(motor)
             
-            # Conexión fluida de señales
-            self.hilo_trabajo.progreso_senal.connect(self.registrar_accion_en_interfaz)
+            self.hilo_trabajo.progreso_senal.connect(self.registrar_accion_interfaz)
             self.hilo_trabajo.finalizado_senal.connect(self.finalizar_escaneo)
-            
-            # Lanzar proceso en segundo plano de alta velocidad
             self.hilo_trabajo.start()
         except Exception as e:
-            self.registrar_accion_en_interfaz(f"❌ Error al lanzar motor: {e}")
+            self.registrar_accion_interfaz(f"❌ Error al lanzar motor: {e}")
             self.escaneo_en_progreso = False
-            self.btn_scan.setEnabled(True)
-            self.btn_scan.setText("ESCANEAR AHORA")
+            self.boton_escanear.setEnabled(True)
+            self.boton_escanear.setText("ESCANEAR AHORA")
 
     def ejecutar_escaneo_asincrono(self):
-        """Mapeo seguro vinculado al evento del botón manual de la Sidebar"""
         if self.escaneo_en_progreso:
             return
         self.iniciar_escaneo()
 
-    # === PASO 5: RESTAURACIÓN Y REGISTRO VISUAL EN HISTORIAL ===
     def finalizar_escaneo(self, total_archivos):
-        """Restablece los controles y refresca las métricas dinámicas (CRUD)"""
         self.escaneo_en_progreso = False
         self.escaneos_ejecutados += 1
         self.ultimo_escaneo = datetime.now()
         
-        # Restaurar botón lateral
-        self.btn_scan.setEnabled(True)
-        self.btn_scan.setText("ESCANEAR AHORA")
+        self.boton_escanear.setEnabled(True)
+        self.boton_escanear.setText("ESCANEAR AHORA")
         
-        # Inyectar log de resumen en verde neón/amarillo dentro del historial
-        lbl_resumen = QLabel(f"✨ Ciclo completado con éxito. Movidos: {total_archivos}")
-        lbl_resumen.setStyleSheet("color: #eab308; font-weight: bold; font-size: 11px; padding: 4px; background: #1a1a1a; border-radius: 4px; margin: 2px 0;")
-        self.act_list.insertWidget(self.act_list.count() - 1, lbl_resumen)
-        self.scroll_act.verticalScrollBar().setValue(self.scroll_act.verticalScrollBar().maximum())
+        etiqueta_resumen = QLabel(f"✨ Ciclo completado. Movidos: {total_archivos}")
+        etiqueta_resumen.setStyleSheet("color: #000000; font-weight: 700; font-size: 11px; padding: 6px; background-color: #eab308; border-radius: 4px;")
+        self.lista_acciones.insertWidget(self.lista_acciones.count() - 1, etiqueta_resumen)
+        self.scroll_acciones.verticalScrollBar().setValue(self.scroll_acciones.verticalScrollBar().maximum())
         
-        # Actualizar las tarjetas numéricas del Dashboard
         self.refrescar_panel_resumen()
 
-    def registrar_accion_en_interfaz(self, mensaje):
-        """Muestra los logs en tiempo real de forma elegante"""
-        lbl_accion = QLabel(mensaje)
-        lbl_accion.setStyleSheet("color: #22c55e; font-size: 11px; padding: 2px; background: #121212; border-radius: 3px; margin: 2px 0;")
-        self.act_list.insertWidget(self.act_list.count() - 1, lbl_accion)
-        self.scroll_act.verticalScrollBar().setValue(self.scroll_act.verticalScrollBar().maximum())
+    def registrar_accion_interfaz(self, mensaje):
+        etiqueta_accion = QLabel(mensaje)
+        etiqueta_accion.setStyleSheet("color: #4ade80; font-size: 11px; padding: 6px; background-color: rgba(34, 197, 94, 0.1); border-left: 2px solid #4ade80; border-radius: 3px;")
+        self.lista_acciones.insertWidget(self.lista_acciones.count() - 1, etiqueta_accion)
+        self.scroll_acciones.verticalScrollBar().setValue(self.scroll_acciones.verticalScrollBar().maximum())
 
-    def _on_move_result(self, info: dict):
-        """Slot que maneja resultados de movimiento emitidos por el watcher."""
+    def al_mover_archivo(self, info: dict):
         try:
             msg = f"👀 [Monitor] {info.get('message')} - {info.get('path')}"
-            self.registrar_accion_en_interfaz(msg)
+            self.registrar_accion_interfaz(msg)
             try:
                 app_signals.stats_changed.emit()
             except Exception:
-                # Fallback a refrescar directamente si la señal falla
                 self.refrescar_panel_resumen()
         except Exception:
             pass
 
-    def closeEvent(self, event):
-        """Cerrar ordenado: detener watcher si existe y esperar a que termine."""
+    def closeEvent(self, evento):
         try:
-            if hasattr(self, 'watchdog') and getattr(self, 'watchdog') is not None:
-                try:
-                    self.watchdog.stop()
-                except Exception:
-                    pass
-                try:
-                    self.watchdog.wait(1000)
-                except Exception:
-                    pass
+            if hasattr(self, 'perro_guardian') and self.perro_guardian is not None:
+                self.perro_guardian.stop()
+                self.perro_guardian.wait(1000)
         except Exception:
             pass
-        super().closeEvent(event)
+        super().closeEvent(evento)
 
     def refrescar_panel_resumen(self):
-        """Actualiza las tarjetas superiores consultando `services.py`."""
         try:
-            db_path = self.asistente.modelo_org.db_path
-            total_mov = f"{get_total_movidos(db_path):,}"
-            total_reglas = f"{get_total_reglas(db_path):,}"
+            ruta_bd = self.asistente.modelo_org.db_path
+            total_mov = f"{get_total_movidos(ruta_bd):,}"
+            total_reglas = f"{get_total_reglas(ruta_bd):,}"
             escaneos = str(self.escaneos_ejecutados)
-            ultimo_texto = self.ultimo_escaneo.strftime("%Y-%m-%d %H:%M:%S") if self.ultimo_escaneo else "Nunca"
-        except Exception:
-            return
+            texto_ultimo = self.ultimo_escaneo.strftime("%Y-%m-%d %H:%M:%S") if self.ultimo_escaneo else "Nunca"
+            
+            self.tarjeta_archivos.actualizar_valor(total_mov)
+            self.tarjeta_reglas.actualizar_valor(total_reglas)
+            self.tarjeta_escaneos.actualizar_valor(escaneos)
+            self.tarjeta_ultimo.actualizar_valor(texto_ultimo)
+            
+            from app.services import obtener_archivos_por_tipo
+            top_archivos = obtener_archivos_por_tipo(ruta_bd, limite=5)
+            texto_tipos = " | ".join([f"{ext}: {cnt}" for ext, cnt in top_archivos]) if top_archivos else "Sin datos recientes"
+            self.etiqueta_tipos_grafico.setText(texto_tipos)
 
-        try:
-            self.card_archivos.actualizar_valor(total_mov)
-            self.card_reglas.actualizar_valor(total_reglas)
-            self.card_escaneos.actualizar_valor(escaneos)
-            self.card_ultimo.actualizar_valor(ultimo_texto)
-            # Actualizar lista resumida de tipos
-            try:
-                from app.services import obtener_archivos_por_tipo
-                top = obtener_archivos_por_tipo(db_path, limite=5)
-                texto = " | ".join([f"{ext}:{cnt}" for ext, cnt in top]) if top else "Sin datos"
-                try:
-                    self.tipo_chart_label.setText(texto)
-                except Exception:
-                    pass
-            except Exception:
-                pass
-            # Actualizar QtChart si está disponible
-            try:
-                if getattr(self, 'chart_view', None):
-                    from app.services import obtener_archivos_por_tipo
-                    top = obtener_archivos_por_tipo(db_path, limite=10)
-                    series = QBarSeries()
-                    categories = []
-                    bar_set = QBarSet('Cantidad')
-                    for ext, cnt in top:
-                        categories.append(ext)
-                        bar_set.append(cnt)
-                    series.append(bar_set)
-                    chart = QChart()
-                    chart.addSeries(series)
-                    axisX = QBarCategoryAxis()
-                    axisX.append(categories)
-                    chart.addAxis(axisX, Qt.AlignBottom)
-                    series.attachAxis(axisX)
-                    axisY = QValueAxis()
-                    # Ajustar rango Y para que las barras sean visibles
-                    maxv = max([cnt for _, cnt in top]) if top else 1
-                    axisY.setRange(0, maxv if maxv>0 else 1)
-                    chart.addAxis(axisY, Qt.AlignLeft)
-                    series.attachAxis(axisY)
-                    chart.legend().setVisible(False)
-                    chart.setTitle('Top extensiones movidas')
-                    try:
-                        self.chart_view.setChart(chart)
-                        # Mejorar renderizado
-                        self.chart_view.setRenderHint(QPainter.Antialiasing)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-        except Exception:
-            pass
+            if getattr(self, 'vista_grafico_stats', None):
+                series = QBarSeries()
+                categorias = []
+                conjunto_barras = QBarSet('Archivos')
+                conjunto_barras.setColor(QColor("#3b82f6")) # Azul moderno para las barras
+                
+                for ext, cnt in top_archivos:
+                    categorias.append(ext)
+                    conjunto_barras.append(cnt)
+                
+                series.append(conjunto_barras)
+                grafico = QChart()
+                grafico.addSeries(series)
+                grafico.setBackgroundBrush(QColor(0, 0, 0, 0)) # Fondo transparente
+                grafico.setContentsMargins(0,0,0,0)
+                
+                eje_x = QBarCategoryAxis()
+                eje_x.append(categorias)
+                eje_x.setLabelsBrush(QColor("#a3a3a3"))
+                grafico.addAxis(eje_x, Qt.AlignBottom)
+                series.attachAxis(eje_x)
+                
+                eje_y = QValueAxis()
+                eje_y.setLabelsBrush(QColor("#a3a3a3"))
+                max_val = max([cnt for _, cnt in top_archivos]) if top_archivos else 1
+                eje_y.setRange(0, max_val if max_val > 0 else 1)
+                grafico.addAxis(eje_y, Qt.AlignLeft)
+                series.attachAxis(eje_y)
+                
+                grafico.legend().setVisible(False)
+                self.vista_grafico_stats.setChart(grafico)
 
-    # === COMPONENTES SECUNDARIOS DEL CHAT DEL SISTEMA ===
-    def init_chat_floating(self):
-        """Inicializa la ventana de chat flotante original con capacidad de minimizar"""
-        self.chat_win = QFrame(self)
-        self.chat_win.setFixedSize(280, 380)
-        self.chat_win.setStyleSheet("background: #1e1e1e; border-radius: 12px; border: 1px solid #eab308;")
+        except Exception as e:
+            print(f"Error actualizando métricas: {e}")
+
+    def inicializar_chat_asistente(self):
+        """Inicializa el widget del Asistente Virtual con diseño integrado"""
+        self.widget_asistente = QFrame()
+        self.widget_asistente.setStyleSheet("""
+            QFrame#widget_asistente {
+                background-color: rgba(24, 24, 24, 0.6); 
+                border-radius: 12px; 
+                border: 1px solid rgba(255, 255, 255, 0.05);
+            }
+        """)
+        self.widget_asistente.setObjectName("widget_asistente")
+
+        distribucion_chat = QVBoxLayout(self.widget_asistente)
+        distribucion_chat.setContentsMargins(0,0,0,0)
+        distribucion_chat.setSpacing(0)
+
+        # Cabecera del Chat
+        marco_cabecera = QFrame()
+        marco_cabecera.setStyleSheet("background-color: rgba(0, 0, 0, 0.2); border-top-left-radius: 12px; border-top-right-radius: 12px;")
+        distribucion_cabecera = QHBoxLayout(marco_cabecera)
+        distribucion_cabecera.setContentsMargins(20, 15, 20, 15)
+        titulo_cabecera = QLabel("Asistente Virtual")
+        titulo_cabecera.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 14px; background: transparent;")
+        distribucion_cabecera.addWidget(titulo_cabecera)
+        distribucion_cabecera.addStretch()
+        distribucion_chat.addWidget(marco_cabecera)
+
+        # Cuerpo del Chat
+        cuerpo_chat = QWidget()
+        cuerpo_chat.setStyleSheet("background: transparent;")
+        distribucion_cuerpo = QVBoxLayout(cuerpo_chat)
+        distribucion_cuerpo.setContentsMargins(20, 15, 20, 20)
+        distribucion_cuerpo.setSpacing(15)
         
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(25); shadow.setColor(QColor(0,0,0,200)); self.chat_win.setGraphicsEffect(shadow)
-
-        self.chat_layout = QVBoxLayout(self.chat_win)
-        self.chat_layout.setContentsMargins(0,0,0,0)
-
-        self.btn_toggle = QPushButton("Mensajes del Sistema")
-        self.btn_toggle.setFixedHeight(40)
-        self.btn_toggle.setStyleSheet("QPushButton { background: #eab308; color: black; font-weight: bold; border-top-left-radius: 10px; border-top-right-radius: 10px; border: none; } QPushButton:hover { background: #c79906; }")
-        self.btn_toggle.clicked.connect(self.toggle_chat)
-        self.chat_layout.addWidget(self.btn_toggle)
-
-        self.chat_body = QWidget()
-        self.body_layout = QVBoxLayout(self.chat_body)
+        self.area_mensajes = QScrollArea()
+        self.area_mensajes.setWidgetResizable(True)
+        self.area_mensajes.setStyleSheet("border: none; background: transparent;")
+        self.area_mensajes.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.area_mensajes.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         
-        self.chat_display = QScrollArea(); self.chat_display.setWidgetResizable(True); self.chat_display.setStyleSheet("border:none;")
-        self.msg_cont = QWidget(); self.msg_l = QVBoxLayout(self.msg_cont); self.msg_l.addStretch()
-        self.chat_display.setWidget(self.msg_cont)
-        self.body_layout.addWidget(self.chat_display)
+        self.contenedor_mensajes = QWidget()
+        self.contenedor_mensajes.setStyleSheet("background: transparent;")
+        self.lista_mensajes = QVBoxLayout(self.contenedor_mensajes)
+        self.lista_mensajes.setContentsMargins(0,0,0,0)
+        self.lista_mensajes.setSpacing(10)
+        self.lista_mensajes.addStretch()
+        self.area_mensajes.setWidget(self.contenedor_mensajes)
+        distribucion_cuerpo.addWidget(self.area_mensajes)
 
-        self.chat_input = QLineEdit(); self.chat_input.setPlaceholderText("Escribe un comando..."); self.chat_input.setStyleSheet("background: #121212; color: white; padding: 10px; border-radius: 5px; border: 1px solid #333;")
-        self.chat_input.returnPressed.connect(self.enviar_a_controlador)
-        self.body_layout.addWidget(self.chat_input)
+        # Entrada de Texto
+        self.entrada_texto = QLineEdit()
+        self.entrada_texto.setPlaceholderText("Escribe un comando aquí...")
+        self.entrada_texto.setStyleSheet("""
+            QLineEdit {
+                background-color: rgba(0, 0, 0, 0.3); 
+                color: #ffffff; padding: 12px 15px; 
+                border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.1);
+            }
+            QLineEdit:focus { border: 1px solid #eab308; }
+        """)
+        self.entrada_texto.setFixedHeight(45)
+        self.entrada_texto.returnPressed.connect(self.enviar_comando)
+        distribucion_cuerpo.addWidget(self.entrada_texto)
 
-        self.chat_layout.addWidget(self.chat_body)
+        distribucion_chat.addWidget(cuerpo_chat)
 
-        self.suggestion_container = QWidget()
-        self.suggestion_layout = QHBoxLayout(self.suggestion_container)
-        self.suggestion_layout.setContentsMargins(8,4,8,4)
-        self.suggestion_container.hide()
-        self.chat_layout.addWidget(self.suggestion_container)
+        # Sugerencias
+        self.contenedor_sugerencias = QWidget()
+        self.contenedor_sugerencias.setStyleSheet("background: transparent;")
+        self.distribucion_sugerencias = QHBoxLayout(self.contenedor_sugerencias)
+        self.distribucion_sugerencias.setContentsMargins(20, 0, 20, 15)
+        self.distribucion_sugerencias.setSpacing(10)
+        self.contenedor_sugerencias.hide()
+        distribucion_chat.addWidget(self.contenedor_sugerencias)
 
-        # Asegurar que el chat flotante sea visible y correctamente posicionado
-        try:
-            self.chat_win.show()
-            self.chat_win.raise_()
-            self.actualizar_posicion_chat()
-        except Exception:
-            pass
-
-    def toggle_chat(self):
-        if self.chat_expandido:
-            self.chat_body.hide()
-            self.chat_win.setFixedHeight(40)
-            self.chat_expandido = False
-        else:
-            self.chat_body.show()
-            self.chat_win.setFixedHeight(380)
-            self.chat_expandido = True
-        self.actualizar_posicion_chat()
-
-    def actualizar_posicion_chat(self):
-        x = self.width() - self.chat_win.width() - 20
-        y = self.height() - self.chat_win.height() - 20
-        self.chat_win.move(x, y)
-
-    def resizeEvent(self, event):
-        self.actualizar_posicion_chat()
-        super().resizeEvent(event)
-
-    def enviar_a_controlador(self):
-        txt = self.chat_input.text().strip()
-        if not txt: return
-        if txt.lower() in ['/ayuda', 'ayuda']:
+    def enviar_comando(self):
+        texto = self.entrada_texto.text().strip()
+        if not texto: return
+        if texto.lower() in ['/ayuda', 'ayuda']:
             self.mostrar_ayuda()
-            self.chat_input.clear()
+            self.entrada_texto.clear()
             return
 
-        respuesta = self.asistente.procesar_peticion(txt)
-        self.msg_l.insertWidget(self.msg_l.count()-1, QLabel(f"<b>Tú:</b> {txt}", styleSheet="color: #888; font-size: 11px;"))
+        respuesta = self.asistente.procesar_peticion(texto)
+        
+        etiqueta_usuario = QLabel(f"<b>Tú:</b> {texto}")
+        etiqueta_usuario.setStyleSheet("color: #a3a3a3; font-size: 12px; padding: 5px;")
+        self.lista_mensajes.insertWidget(self.lista_mensajes.count()-1, etiqueta_usuario)
 
         if isinstance(respuesta, dict) and 'suggestions' in respuesta:
-            self.msg_l.insertWidget(self.msg_l.count()-1, QLabel(f"<b>Sistema:</b> {respuesta.get('message')}", styleSheet="color: white; background: #222; padding: 8px; border-radius: 5px;"))
-            for i in reversed(range(self.suggestion_layout.count())):
-                w = self.suggestion_layout.itemAt(i).widget()
-                if w: w.setParent(None)
+            self.agregar_mensaje_sistema(respuesta.get('message'))
+            
+            for i in reversed(range(self.distribucion_sugerencias.count())):
+                widget = self.distribucion_sugerencias.itemAt(i).widget()
+                if widget: widget.setParent(None)
 
-            for sug in respuesta.get('suggestions', []):
-                btn = QPushButton(sug)
-                btn.setStyleSheet("QPushButton{background:#2b2b2b;color:white;padding:6px;border-radius:6px;} QPushButton:hover{background:#3b3b3b}")
-                btn.clicked.connect(lambda _, s=sug: self._usar_sugerencia(s))
-                self.suggestion_layout.addWidget(btn)
-            self.suggestion_container.show()
+            for sugerencia in respuesta.get('suggestions', []):
+                boton_sug = QPushButton(sugerencia)
+                boton_sug.setStyleSheet("""
+                    QPushButton { background: rgba(234, 179, 8, 0.15); color: #eab308; padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(234, 179, 8, 0.3); font-size: 11px; } 
+                    QPushButton:hover { background: rgba(234, 179, 8, 0.25); }
+                """)
+                boton_sug.clicked.connect(lambda _, s=sugerencia: self.usar_sugerencia(s))
+                self.distribucion_sugerencias.addWidget(boton_sug)
+            self.contenedor_sugerencias.show()
         else:
-            self.msg_l.insertWidget(self.msg_l.count()-1, QLabel(f"<b>Sistema:</b> {respuesta}", styleSheet="color: white; background: #222; padding: 8px; border-radius: 5px;"))
-            self.suggestion_container.hide()
+            self.agregar_mensaje_sistema(str(respuesta))
+            self.contenedor_sugerencias.hide()
 
-        self.chat_display.verticalScrollBar().setValue(self.chat_display.verticalScrollBar().maximum())
-        self.chat_input.clear()
+        self.area_mensajes.verticalScrollBar().setValue(self.area_mensajes.verticalScrollBar().maximum())
+        self.entrada_texto.clear()
 
-    def _usar_sugerencia(self, texto_sugerencia):
-        self.chat_input.setText(texto_sugerencia)
-        self.enviar_a_controlador()
+    def usar_sugerencia(self, texto_sugerencia):
+        self.entrada_texto.setText(texto_sugerencia)
+        self.enviar_comando()
 
     def mostrar_ayuda(self):
         try:
-            alias_keys = list(self.asistente.rutas_atajo.keys())
+            claves_alias = list(self.asistente.rutas_atajo.keys())
         except Exception:
-            alias_keys = ['escritorio', 'documentos', 'descargas']
+            claves_alias = ['escritorio', 'documentos', 'descargas']
 
         ejemplos = [
-            f"Mueve <b>archivos</b> a <b>{alias_keys[1]}</b>",
-            f"Crea una carpeta llamada <b>fotos</b> en <b>{alias_keys[0]}</b>",
-            f"Mueve <b>pdf</b> a <b>{alias_keys[2]}</b>",
-            "Crear destino: <b>crear destino fotos en C:/Users/miusuario/Imágenes</b>",
-            "Agregar origen (monitor): <b>monitorizar C:/Users/miusuario/Descargas como descargas</b>",
-            "Agregar origen (IA, lenguaje natural): <b>añade descargas como origen y crea la carpeta TareasUniversidad</b>",
-            "Agregar regla (IA): <b>crea una regla para pdf y docx a respaldos</b>",
+            f"Mueve <b>archivos</b> a <b>{claves_alias[1]}</b>",
+            f"Crea una carpeta llamada <b>fotos</b> en <b>{claves_alias[0]}</b>",
+            f"Mueve <b>pdf</b> a <b>{claves_alias[2]}</b>",
             "Agregar regla (comando directo): <b>asignar .pdf a Destino_Documentos</b>",
-            "Listar: <b>listar reglas</b> | <b>mostrar destinos</b> | <b>mostrar orígenes</b>",
-            "Eliminar regla: <b>eliminar regla .pdf</b>",
+            "Listar: <b>listar reglas</b> | <b>mostrar destinos</b>",
         ]
-        alias_html = ''.join(f"<li>{a}</li>" for a in alias_keys[:6])
+        html_alias = ''.join(f"<li>{a}</li>" for a in claves_alias[:6])
 
-        html = f"<div style='color:#ddd; font-size:13px; line-height:1.4;'>"
-        html += "<b>Comandos útiles</b><ul>"
-        for e in ejemplos:
-            html += f"<li>{e}</li>"
-        html += "</ul>"
-        html += "<b>Alias reconocidos</b><ul>" + alias_html + "</ul></div>"
+        html_ayuda = f"<div style='color:#e4e4e7; font-size:12px; line-height:1.5;'>"
+        html_ayuda += "<b style='color:#eab308;'>Comandos útiles</b><ul>"
+        for ej in ejemplos:
+            html_ayuda += f"<li>{ej}</li>"
+        html_ayuda += "</ul>"
+        html_ayuda += "<b style='color:#eab308;'>Alias reconocidos</b><ul>" + html_alias + "</ul></div>"
 
-        lbl = QLabel(html)
-        lbl.setStyleSheet("color: white; background: #222; padding: 8px; border-radius: 5px;")
-        lbl.setTextFormat(Qt.RichText)
-        self.msg_l.insertWidget(self.msg_l.count()-1, QLabel(f"<b>Tú:</b> /ayuda", styleSheet="color: #888; font-size: 11px;"))
-        self.msg_l.insertWidget(self.msg_l.count()-1, lbl)
-        self.chat_display.verticalScrollBar().setValue(self.chat_display.verticalScrollBar().maximum())
+        etiqueta_ayuda = QLabel(html_ayuda)
+        etiqueta_ayuda.setStyleSheet("background-color: rgba(39, 39, 42, 0.8); padding: 12px; border-radius: 6px; border-left: 3px solid #eab308;")
+        etiqueta_ayuda.setTextFormat(Qt.RichText)
+        
+        etiqueta_cmd = QLabel(f"<b>Tú:</b> /ayuda")
+        etiqueta_cmd.setStyleSheet("color: #a3a3a3; font-size: 12px; padding: 5px;")
+        
+        self.lista_mensajes.insertWidget(self.lista_mensajes.count()-1, etiqueta_cmd)
+        self.lista_mensajes.insertWidget(self.lista_mensajes.count()-1, etiqueta_ayuda)
+        self.area_mensajes.verticalScrollBar().setValue(self.area_mensajes.verticalScrollBar().maximum())
