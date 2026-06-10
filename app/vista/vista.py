@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QStackedWidget, QMessageBox)
 from PySide6.QtCore import Qt, QSize, QThread, Signal, QTimer
 from PySide6.QtGui import QColor, QFont, QPainter
-from PySide6.QtCharts import QChartView, QChart, QBarSeries, QBarSet, QBarCategoryAxis, QValueAxis
+from PySide6.QtCharts import QChartView, QChart, QBarSeries, QBarSet, QBarCategoryAxis, QValueAxis, QPieSeries, QPieSlice
 
 from app.services import get_total_movidos, get_total_reglas
 from app.signals import app_signals
@@ -324,9 +324,18 @@ class DashboardOrganizador(QMainWindow):
         distribucion_inferior = QHBoxLayout()
         distribucion_inferior.setSpacing(25)
         
-        # Eliminado el marco redundante "Distribución de Archivos"
-        distribucion_inferior.addWidget(self.widget_asistente, 3) 
-        distribucion_inferior.addWidget(marco_estadisticas, 4)
+        # Ajuste: dar más espacio al chat y reducir el gráfico central para mejor legibilidad
+        try:
+            self.widget_asistente.setMinimumWidth(480)
+        except Exception:
+            pass
+        try:
+            marco_estadisticas.setMaximumWidth(360)
+        except Exception:
+            pass
+
+        distribucion_inferior.addWidget(self.widget_asistente, 5)
+        distribucion_inferior.addWidget(marco_estadisticas, 2)
         distribucion_inferior.addWidget(marco_acciones, 3)
 
         distribucion.addLayout(distribucion_inferior, 1)
@@ -419,36 +428,30 @@ class DashboardOrganizador(QMainWindow):
             self.etiqueta_tipos_grafico.setText(texto_tipos)
 
             if getattr(self, 'vista_grafico_stats', None):
-                series = QBarSeries()
-                categorias = []
-                conjunto_barras = QBarSet('Archivos')
-                conjunto_barras.setColor(QColor("#3b82f6")) # Azul moderno para las barras
-                
-                for ext, cnt in top_archivos:
-                    categorias.append(ext)
-                    conjunto_barras.append(cnt)
-                
-                series.append(conjunto_barras)
-                grafico = QChart()
-                grafico.addSeries(series)
-                grafico.setBackgroundBrush(QColor(0, 0, 0, 0)) # Fondo transparente
-                grafico.setContentsMargins(0,0,0,0)
-                
-                eje_x = QBarCategoryAxis()
-                eje_x.append(categorias)
-                eje_x.setLabelsBrush(QColor("#a3a3a3"))
-                grafico.addAxis(eje_x, Qt.AlignBottom)
-                series.attachAxis(eje_x)
-                
-                eje_y = QValueAxis()
-                eje_y.setLabelsBrush(QColor("#a3a3a3"))
-                max_val = max([cnt for _, cnt in top_archivos]) if top_archivos else 1
-                eje_y.setRange(0, max_val if max_val > 0 else 1)
-                grafico.addAxis(eje_y, Qt.AlignLeft)
-                series.attachAxis(eje_y)
-                
-                grafico.legend().setVisible(False)
-                self.vista_grafico_stats.setChart(grafico)
+                try:
+                    series = QPieSeries()
+                    total = sum([cnt for _, cnt in top_archivos]) if top_archivos else 0
+                    for ext, cnt in top_archivos:
+                        slice = QPieSlice(ext, cnt)
+                        slice.setLabelVisible(True)
+                        slice.setLabel(f"{ext} ({cnt})")
+                        series.append(slice)
+                    # Si no hay datos, mostrar un slice único
+                    if not top_archivos:
+                        s = QPieSlice('Sin datos', 1)
+                        s.setLabelVisible(True)
+                        series.append(s)
+
+                    grafico = QChart()
+                    grafico.addSeries(series)
+                    grafico.setAnimationOptions(QChart.SeriesAnimations)
+                    grafico.legend().setAlignment(Qt.AlignRight)
+                    grafico.setTitle('Distribución por extensión')
+                    grafico.setBackgroundBrush(QColor(0, 0, 0, 0))
+                    self.vista_grafico_stats.setChart(grafico)
+                    self.vista_grafico_stats.setRenderHint(QPainter.Antialiasing)
+                except Exception:
+                    pass
 
         except Exception as e:
             print(f"Error actualizando métricas: {e}")
