@@ -450,11 +450,14 @@ class GestorBaseDatos:
     def agregar_directorio_destino(self, ruta, nombre_alias=None):
         try:
             self.db.cursor.execute(
-                "INSERT OR IGNORE INTO directorios_destino (ruta, nombre_alias) VALUES (?, ?)",
+                "INSERT INTO directorios_destino (ruta, nombre_alias) VALUES (?, ?)",
                 (ruta, nombre_alias)
             )
             self.db.confirmar()
             return True
+        except sqlite3.IntegrityError as e:
+            self.logar_error("agregar_directorio_destino_integrity", str(e))
+            return 'integrity_error'
         except sqlite3.Error as e:
             self.logar_error("agregar_directorio_destino", str(e))
             return False
@@ -491,13 +494,28 @@ class GestorBaseDatos:
     def agregar_carpeta_monitoreada(self, ruta, nombre_alias=None):
         try:
             self.db.cursor.execute("""
-                INSERT OR IGNORE INTO carpetas_monitoreadas (ruta, nombre_alias, activa) 
+                INSERT INTO carpetas_monitoreadas (ruta, nombre_alias, activa) 
                 VALUES (?, ?, 1)
             """, (ruta, nombre_alias))
             self.db.confirmar()
             return True
+        except sqlite3.IntegrityError as e:
+            self.logar_error("agregar_carpeta_monitoreada_integrity", str(e))
+            return 'integrity_error'
         except sqlite3.Error as e:
             self.logar_error("agregar_carpeta_monitoreada", str(e))
+            return False
+
+    def eliminar_carpetas_monitoreadas(self, ids):
+        try:
+            if not ids:
+                return False
+            placeholders = ",".join(["?"] * len(ids))
+            self.db.cursor.execute(f"DELETE FROM carpetas_monitoreadas WHERE id IN ({placeholders})", tuple(ids))
+            self.db.confirmar()
+            return True
+        except sqlite3.Error as e:
+            self.logar_error("eliminar_carpetas_monitoreadas", str(e))
             return False
 
     def obtener_carpetas_monitoreadas(self):

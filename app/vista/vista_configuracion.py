@@ -3,6 +3,8 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                                QTableWidgetItem, QHeaderView, QMessageBox, QFileDialog, QScrollArea)
 from PySide6.QtGui import QFont, QCursor
 from PySide6.QtCore import Qt
+from pathlib import Path
+import sqlite3
 
 class VistaConfiguracionGlobal(QWidget):
     def __init__(self, asistente, callback_regresar, parent=None):
@@ -83,7 +85,7 @@ class VistaConfiguracionGlobal(QWidget):
         btn_add_origen = QPushButton("Agregar Origen")
         btn_add_origen.setStyleSheet(estilo_btn_amarillo)
         btn_add_origen.clicked.connect(self.agregar_origen)
-        btn_del_origen = QPushButton("Eliminar Selección")
+        btn_del_origen = QPushButton("Eliminar Seleccionados")
         btn_del_origen.setStyleSheet(estilo_btn_rojo)
         btn_del_origen.clicked.connect(self.eliminar_origen)
         origen_btn_layout.addWidget(btn_add_origen)
@@ -91,9 +93,11 @@ class VistaConfiguracionGlobal(QWidget):
         layout_origen.addLayout(origen_btn_layout)
 
         self.tabla_origenes = QTableWidget()
-        self.tabla_origenes.setColumnCount(2)
-        self.tabla_origenes.setHorizontalHeaderLabels(["ID", "Ruta de Entrada"])
-        self.tabla_origenes.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.tabla_origenes.setColumnCount(3)
+        self.tabla_origenes.setHorizontalHeaderLabels(["", "ID", "Ruta de Entrada"])
+        self.tabla_origenes.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.tabla_origenes.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.tabla_origenes.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
         self.tabla_origenes.setSelectionBehavior(QTableWidget.SelectRows)
         self.tabla_origenes.setFont(QFont("Segoe UI", 10))
         self.tabla_origenes.setShowGrid(False)
@@ -372,29 +376,59 @@ class VistaConfiguracionGlobal(QWidget):
             self.tabla_origenes.setRowCount(0)
             for idx, fila in enumerate(filas):
                 self.tabla_origenes.insertRow(idx)
-                self.tabla_origenes.setItem(idx, 0, QTableWidgetItem(str(fila[0])))
-                self.tabla_origenes.setItem(idx, 1, QTableWidgetItem(str(fila[1])))
+                checkbox = QTableWidgetItem()
+                checkbox.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
+                checkbox.setCheckState(Qt.Unchecked)
+                self.tabla_origenes.setItem(idx, 0, checkbox)
+
+                id_item = QTableWidgetItem(str(fila[0]))
+                id_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+                self.tabla_origenes.setItem(idx, 1, id_item)
+
+                ruta_item = QTableWidgetItem(str(fila[1]))
+                ruta_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+                self.tabla_origenes.setItem(idx, 2, ruta_item)
         except Exception: pass
 
     def agregar_origen(self):
         ruta = self.input_ruta_origen.text().strip()
         if not ruta: return
+        alias = Path(ruta).name
         try:
             conn, cursor = self.conectar_db()
-            cursor.execute("INSERT OR IGNORE INTO carpetas_monitoreadas (ruta, nombre_alias, activa) VALUES (?, ?, 1)", (ruta, None))
+            cursor.execute("INSERT INTO carpetas_monitoreadas (ruta, nombre_alias, activa) VALUES (?, ?, 1)", (ruta, alias))
             conn.commit(); conn.close()
             self.input_ruta_origen.clear(); self.cargar_origenes()
-        except Exception: pass
+        except sqlite3.IntegrityError:
+            QMessageBox.warning(self, "Carpeta ya monitorizada", "La carpeta seleccionada ya está siendo monitoreada.")
+        except Exception:
+            pass
 
     def eliminar_origen(self):
-        fila = self.tabla_origenes.currentRow()
-        if fila < 0: return
+        ids_seleccionados = []
+        for fila in range(self.tabla_origenes.rowCount()):
+            check_item = self.tabla_origenes.item(fila, 0)
+            if not check_item or check_item.checkState() != Qt.Checked:
+                continue
+
+            id_item = self.tabla_origenes.item(fila, 1)
+            if id_item and id_item.text().isdigit():
+                ids_seleccionados.append(int(id_item.text()))
+
+        if not ids_seleccionados:
+            return
+
         try:
-            conn, cursor = self.conectar_db()
-            cursor.execute("UPDATE carpetas_monitoreadas SET activa = 0 WHERE id = ?", (self.tabla_origenes.item(fila, 0).text(),))
-            conn.commit(); conn.close()
+            if getattr(self.asistente.modelo_org, 'gestor', None):
+                self.asistente.modelo_org.gestor.eliminar_carpetas_monitoreadas(ids_seleccionados)
+            else:
+                conn, cursor = self.conectar_db()
+                placeholders = ",".join(["?"] * len(ids_seleccionados))
+                cursor.execute(f"DELETE FROM carpetas_monitoreadas WHERE id IN ({placeholders})", ids_seleccionados)
+                conn.commit(); conn.close()
             self.cargar_origenes()
-        except Exception: pass
+        except Exception:
+            pass
 
     def cargar_destinos(self):
         try:
@@ -411,14 +445,21 @@ class VistaConfiguracionGlobal(QWidget):
         except Exception: pass
 
     def agregar_destino(self):
-        nombre, ruta = self.input_alias_destino.text().strip().lower(), self.input_ruta_destino.text().strip()
-        if not nombre or not ruta: return
+        nombre = self.input_alias_destino.text().strip()
+        ruta = self.input_ruta_destino.text().strip()
+        if not ruta: return
+        if not nombre:
+            nombre = Path(ruta).name
+        nombre = nombre.lower()
         try:
             conn, cursor = self.conectar_db()
             cursor.execute("INSERT INTO directorios_destino (ruta, nombre_alias) VALUES (?, ?)", (ruta, nombre))
             conn.commit(); conn.close()
             self.input_alias_destino.clear(); self.input_ruta_destino.clear(); self.cargar_destinos()
-        except Exception: pass
+        except sqlite3.IntegrityError:
+            QMessageBox.warning(self, "Destino existente", "El alias o la ruta ya existen en los destinos configurados.")
+        except Exception:
+            pass
 
     def eliminar_destino(self):
         fila = self.tabla_destinos.currentRow()

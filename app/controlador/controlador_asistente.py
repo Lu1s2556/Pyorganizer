@@ -135,11 +135,13 @@ class AsistenteVigiData:
         # Registrar en la BD usando API existente
         try:
             alias = carpeta_final.name
-            ok = False
+            ok = None
             if getattr(self.modelo_org, 'gestor', None):
                 ok = self.modelo_org.gestor.agregar_carpeta_monitoreada(str(carpeta_final), alias)
             elif hasattr(self.modelo_org, 'agregar_carpeta_monitoreada'):
                 ok = self.modelo_org.agregar_carpeta_monitoreada(str(carpeta_final), alias)
+            if ok == 'integrity_error':
+                return f"❌ La carpeta '{carpeta_final}' ya está siendo monitoreada."
             if ok:
                 try:
                     self.actualizar_reglas_en_memoria()
@@ -177,11 +179,13 @@ class AsistenteVigiData:
 
         try:
             alias = destino_final.name
-            ok = False
+            ok = None
             if getattr(self.modelo_org, 'gestor', None):
                 ok = self.modelo_org.gestor.agregar_directorio_destino(str(destino_final), alias)
             elif hasattr(self.modelo_org, 'agregar_directorio_destino'):
                 ok = self.modelo_org.agregar_directorio_destino(str(destino_final), alias)
+            if ok == 'integrity_error':
+                return f"❌ El alias o la ruta ya existen para: {destino_final}"
             if ok:
                 try:
                     app_signals.stats_changed.emit()
@@ -247,11 +251,13 @@ class AsistenteVigiData:
                 return f"❌ No pude crear la carpeta física: {e}"
             # Registrar
             try:
-                ok = False
+                ok = None
                 if hasattr(self.modelo_org, 'agregar_directorio_destino'):
                     ok = self.modelo_org.agregar_directorio_destino(str(ruta_path), alias)
                 elif getattr(self.modelo_org, 'gestor', None):
                     ok = self.modelo_org.gestor.agregar_directorio_destino(str(ruta_path), alias)
+                if ok == 'integrity_error':
+                    return f"❌ El alias o la ruta ya existen para: {ruta_path}"
                 if ok:
                     try:
                         self.actualizar_reglas_en_memoria()
@@ -278,11 +284,13 @@ class AsistenteVigiData:
             except Exception as e:
                 return f"❌ No pude crear la carpeta física: {e}"
             try:
-                ok = False
+                ok = None
                 if hasattr(self.modelo_org, 'agregar_directorio_destino'):
                     ok = self.modelo_org.agregar_directorio_destino(str(ruta_path), alias)
                 elif getattr(self.modelo_org, 'gestor', None):
                     ok = self.modelo_org.gestor.agregar_directorio_destino(str(ruta_path), alias)
+                if ok == 'integrity_error':
+                    return f"❌ El alias o la ruta ya existen para: {ruta_path}"
                 if ok:
                     try:
                         self.actualizar_reglas_en_memoria()
@@ -309,9 +317,11 @@ class AsistenteVigiData:
             except Exception as e:
                 return f"❌ No pude crear la carpeta física: {e}"
             try:
-                ok = False
+                ok = None
                 if getattr(self.modelo_org, 'gestor', None):
                     ok = self.modelo_org.agregar_carpeta_monitoreada(str(ruta_path), alias)
+                if ok == 'integrity_error':
+                    return f"❌ La carpeta '{ruta_path}' ya está siendo monitoreada."
                 if ok:
                     try:
                         app_signals.stats_changed.emit()
@@ -332,9 +342,11 @@ class AsistenteVigiData:
             if not ruta_path.exists():
                 return f"La ruta '{ruta}' no existe. Responde 'confirmar agregar origen {alias} en {ruta}' para crearla y registrarla."
             try:
-                ok = False
+                ok = None
                 if getattr(self.modelo_org, 'gestor', None):
                     ok = self.modelo_org.agregar_carpeta_monitoreada(str(ruta_path), alias)
+                if ok == 'integrity_error':
+                    return f"❌ La carpeta '{ruta_path}' ya está siendo monitoreada."
                 if ok:
                     try:
                         app_signals.stats_changed.emit()
