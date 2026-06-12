@@ -2,9 +2,10 @@ import sys
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                                QLineEdit, QPushButton, QFrame, QFormLayout, 
                                QComboBox, QTableWidget, QTableWidgetItem, 
-                               QHeaderView, QMessageBox, QApplication, QAbstractItemView, QCheckBox)
-from PySide6.QtGui import QFont, QColor, QIcon, QAction
-from PySide6.QtCore import Qt, QSize
+                               QHeaderView, QMessageBox, QApplication, 
+                               QAbstractItemView, QCheckBox, QScrollArea)
+from PySide6.QtGui import QFont, QColor, QCursor
+from PySide6.QtCore import Qt
 
 # =============================================================================
 # HOJA DE ESTILO MAESTRA (QSS) - Diseño Moderno, Transparente y Amarillo
@@ -12,7 +13,7 @@ from PySide6.QtCore import Qt, QSize
 QSS_MODERNO = """
     /* Fondo principal translúcido */
     QWidget#VistaPrincipal {
-        background-color: rgba(20, 20, 22, 150); /* Muy transparente para ver el escritorio */
+        background-color: rgba(20, 20, 22, 150);
     }
 
     QLabel {
@@ -23,9 +24,9 @@ QSS_MODERNO = """
 
     /* Paneles con efecto Glassmorphism */
     QFrame#PanelGlass {
-        background-color: rgba(35, 35, 40, 180); /* Fondo panel semitransparente */
+        background-color: rgba(35, 35, 40, 180);
         border-radius: 15px;
-        border: 1px solid rgba(255, 255, 255, 30); /* Borde sutil brillante */
+        border: 1px solid rgba(255, 255, 255, 30);
         padding: 10px;
     }
 
@@ -39,7 +40,7 @@ QSS_MODERNO = """
         font-size: 13px;
     }
     QLineEdit:focus, QComboBox:focus {
-        border: 2px solid #fbbf24; /* Amarillo Oro al enfocar */
+        border: 2px solid #fbbf24;
         background-color: rgba(15, 15, 18, 255);
     }
     QComboBox::drop-down {
@@ -66,9 +67,8 @@ QSS_MODERNO = """
         border: 1px solid #fbbf24;
     }
     QCheckBox::indicator:checked {
-        background-color: #eab308; /* Amarillo */
+        background-color: #eab308;
         border: 1px solid #eab308;
-        /* Aquí iría un icono de check blanco si tuvieras el recurso */
     }
 
     /* Botones Modernos */
@@ -89,7 +89,7 @@ QSS_MODERNO = """
     }
 
     QPushButton#BtnPeligro {
-        background-color: rgba(239, 68, 68, 40); /* Rojo transparente */
+        background-color: rgba(239, 68, 68, 40);
         color: #ef4444;
         font-weight: bold;
         border-radius: 8px;
@@ -97,7 +97,7 @@ QSS_MODERNO = """
         border: 1px solid rgba(239, 68, 68, 100);
     }
     QPushButton#BtnPeligro:hover {
-        background-color: rgba(239, 68, 68, 255); /* Rojo sólido */
+        background-color: rgba(239, 68, 68, 255);
         color: white;
     }
 
@@ -127,7 +127,7 @@ QSS_MODERNO = """
         border-bottom: 1px solid rgba(255, 255, 255, 10);
     }
     QTableWidget::item:selected {
-        background-color: rgba(234, 179, 8, 30); /* Amarillo muy suave */
+        background-color: rgba(234, 179, 8, 30);
         color: #fbbf24;
         font-weight: bold;
     }
@@ -141,7 +141,7 @@ QSS_MODERNO = """
         font-size: 12px;
     }
 
-    /* Barra de desplazamiento (Scrollbar) delgada y moderna */
+    /* Barra de desplazamiento */
     QScrollBar:vertical {
         border: none;
         background: transparent;
@@ -154,7 +154,7 @@ QSS_MODERNO = """
         border-radius: 4px;
     }
     QScrollBar::handle:vertical:hover {
-        background: #eab308; /* Amarillo al hover */
+        background: #eab308;
     }
     QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
         height: 0px;
@@ -166,16 +166,23 @@ class VistaReglasOrganizacion(QWidget):
         super().__init__(parent)
         self.setObjectName("VistaPrincipal")
         self.asistente = asistente
-        # Callback dummy si no se provee, para poder probar la clase sola
         self.callback_regresar = callback_regresar if callback_regresar else lambda: print("Regresando...")
         
-        # Aplicar el QSS globalmente a este widget y sus hijos
         self.setStyleSheet(QSS_MODERNO)
         
+        # 1. Inicializamos la UI general
         self.init_ui()
-        # Mock para pruebas, descomentar si usas la base de datos real
-        # self.actualizar_selector_carpetas() 
-        self._cargar_datos_prueba() # Eliminar esto en producción
+        
+        # 2. Inicializamos el chat asistente (Flotante)
+        self.inicializar_chat_asistente()
+        
+        # 3. Cargar datos
+        try:
+            self.actualizar_selector_carpetas()
+            self.agregar_mensaje_sistema("Estoy listo para ayudarte a crear o modificar reglas de organización.")
+        except Exception:
+            # Fallback para vista de prueba si no hay base de datos
+            self._cargar_datos_prueba() 
 
     def init_ui(self):
         layout_principal = QVBoxLayout(self)
@@ -183,10 +190,9 @@ class VistaReglasOrganizacion(QWidget):
         layout_principal.setSpacing(25)
 
         # =========================================================================
-        # CABECERA (Header)
+        # CABECERA
         # =========================================================================
         head_layout = QHBoxLayout()
-        
         icon_frame = QLabel("📁"); icon_frame.setStyleSheet("font-size: 35px; background: transparent;")
         head_layout.addWidget(icon_frame)
 
@@ -200,15 +206,14 @@ class VistaReglasOrganizacion(QWidget):
         
         head_layout.addLayout(info_head)
         head_layout.addStretch()
-        
         layout_principal.addLayout(head_layout)
 
-        # Contenedores centrales (Split)
+        # Contenedores centrales
         split_layout = QHBoxLayout()
         split_layout.setSpacing(30)
 
         # =========================================================================
-        # PANEL IZQUIERDO: CONFIGURACIÓN (Formulario)
+        # PANEL IZQUIERDO: CONFIGURACIÓN
         # =========================================================================
         self.panel_config = QFrame()
         self.panel_config.setObjectName("PanelGlass")
@@ -225,46 +230,36 @@ class VistaReglasOrganizacion(QWidget):
         layout_form.setSpacing(15)
         layout_form.setLabelAlignment(Qt.AlignLeft)
 
-        # 1. Carpeta Objetivo
         self.combo_carpetas = QComboBox()
         self.combo_carpetas.addItem("Seleccione carpeta...")
+        self.combo_carpetas.currentTextChanged.connect(self.cargar_reglas_por_carpeta)
 
-        # 2. Nombre
         self.input_nombre_regla = QLineEdit()
         self.input_nombre_regla.setPlaceholderText("Ej: Filtro de Documentos")
 
-        # 3. Extensiones (CAMBIO CLAVE PARA RAM: QLineEdit en lugar de QListWidget)
         self.container_ext = QVBoxLayout()
         self.input_extensiones = QLineEdit()
         self.input_extensiones.setPlaceholderText("pdf, docx, txt (separadas por comas)")
-        
         lbl_tip_ext = QLabel("💡 Tip: Escriba '*' para incluir todos los archivos.")
         lbl_tip_ext.setStyleSheet("color: #666; font-size: 11px; margin-top: 4px; padding-left: 2px;")
-        
         self.container_ext.addWidget(self.input_extensiones)
         self.container_ext.addWidget(lbl_tip_ext)
         self.container_ext.setSpacing(0)
 
-        # 4. Estado Activo
         self.check_activa = QCheckBox("Habilitar regla inmediatamente")
         self.check_activa.setChecked(True)
 
-        # Añadir filas al formulario
         lbl_car = QLabel("Carpeta:"); lbl_car.setStyleSheet("color: #888; font-weight: bold;")
         layout_form.addRow(lbl_car, self.combo_carpetas)
-        
         lbl_nom = QLabel("Nombre:"); lbl_nom.setStyleSheet("color: #888; font-weight: bold;")
         layout_form.addRow(lbl_nom, self.input_nombre_regla)
-        
         lbl_ext = QLabel("Extensiones:"); lbl_ext.setStyleSheet("color: #888; font-weight: bold;")
         layout_form.addRow(lbl_ext, self.container_ext)
-        
         layout_form.addRow("", self.check_activa)
 
         layout_form_container.addLayout(layout_form)
         layout_form_container.addStretch()
 
-        # Botón Agregar Regla (Estilo Amarillo Primario)
         self.btn_agregar_regla = QPushButton("AGREGAR REGLA")
         self.btn_agregar_regla.setObjectName("BtnPrimario")
         self.btn_agregar_regla.setCursor(Qt.PointingHandCursor)
@@ -286,44 +281,31 @@ class VistaReglasOrganizacion(QWidget):
         lbl_tabla_tit = QLabel("Reglas Existentes")
         lbl_tabla_tit.setStyleSheet("color: white; font-weight: bold; font-size: 18px; background: transparent;")
         
-        self.lbl_count = QLabel("(3 reglas)")
+        self.lbl_count = QLabel("(0 reglas)")
         self.lbl_count.setStyleSheet("color: #666; font-size: 14px; margin-left: 8px; background: transparent;")
         
         head_tabla.addWidget(lbl_tabla_tit)
         head_tabla.addWidget(self.lbl_count)
         head_tabla.addStretch()
-        
-        # Input de búsqueda rápida en tabla (Toque moderno extra)
-        self.input_busqueda = QLineEdit()
-        self.input_busqueda.setPlaceholderText("Buscar regla...")
-        self.input_busqueda.setFixedWidth(200)
-        self.input_busqueda.setStyleSheet("padding: 6px 10px; font-size: 12px; border-radius: 6px;")
-        head_tabla.addWidget(self.input_busqueda)
-
         layout_tabla_v.addLayout(head_tabla)
 
-        # Tabla de visualización (Sin bordes, transparente)
         self.tabla_reglas = QTableWidget()
         self.tabla_reglas.setColumnCount(4)
         self.tabla_reglas.setHorizontalHeaderLabels(["ID", "Nombre de Regla", "Extensiones", "Estado"])
-        
-        # Configuraciones de comportamiento de la tabla
         self.tabla_reglas.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.tabla_reglas.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.tabla_reglas.setEditTriggers(QAbstractItemView.NoEditTriggers) # No editar directo en tabla para diseño limpio
+        self.tabla_reglas.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tabla_reglas.setShowGrid(False)
         self.tabla_reglas.verticalHeader().setVisible(False)
         
-        # Ajuste de columnas
         header = self.tabla_reglas.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeToContents) # ID pequeño
-        header.setSectionResizeMode(1, QHeaderView.Stretch)          # Nombre ancho
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents) # Ext medio
-        header.setSectionResizeMode(3, QHeaderView.ResizeToContents) # Estado medio
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
 
         layout_tabla_v.addWidget(self.tabla_reglas)
 
-        # Botón Eliminar Regla (Estilo Peligro Rojo Transparente)
         self.btn_eliminar_regla = QPushButton("ELIMINAR REGLA SELECCIONADA")
         self.btn_eliminar_regla.setObjectName("BtnPeligro")
         self.btn_eliminar_regla.setCursor(Qt.PointingHandCursor)
@@ -331,87 +313,192 @@ class VistaReglasOrganizacion(QWidget):
         layout_tabla_v.addWidget(self.btn_eliminar_regla)
 
         split_layout.addWidget(self.panel_tabla)
-        
-        # Añadir split central al layout principal
         layout_principal.addLayout(split_layout)
 
         # =========================================================================
-        # BOTÓN INFERIOR (Volver)
+        # BOTÓN INFERIOR (Volver y Chat Burbuja)
         # =========================================================================
-        footer_layout = QHBoxLayout()
+        layout_inferior = QHBoxLayout()
+        layout_inferior.setContentsMargins(0, 10, 0, 0)
+        
+        # Botón Volver
         self.btn_volver = QPushButton("← Volver al Panel Resumen")
         self.btn_volver.setObjectName("BtnSecundario")
-        self.btn_volver.setFixedWidth(220)
+        self.btn_volver.setFixedWidth(240)
+        self.btn_volver.setFixedHeight(45)
         self.btn_volver.setCursor(Qt.PointingHandCursor)
         self.btn_volver.clicked.connect(self.callback_regresar)
+        layout_inferior.addWidget(self.btn_volver, alignment=Qt.AlignBottom | Qt.AlignLeft)
+
+        layout_inferior.addStretch()
+
+        # Botón estilo "Burbuja" para abrir el chat
+        self.btn_abrir_chat = QPushButton("💬 Asistente")
+        self.btn_abrir_chat.setCursor(QCursor(Qt.PointingHandCursor))
+        self.btn_abrir_chat.setFixedSize(140, 45)
+        self.btn_abrir_chat.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(24, 24, 27, 0.95); 
+                color: #eab308; font-weight: bold; font-size: 14px;
+                border-radius: 22px; 
+                border: 1px solid rgba(234, 179, 8, 0.5);
+            }
+            QPushButton:hover {
+                background-color: rgba(234, 179, 8, 0.15);
+                border: 1px solid #eab308;
+            }
+        """)
+        self.btn_abrir_chat.clicked.connect(self.mostrar_chat)
+        layout_inferior.addWidget(self.btn_abrir_chat, alignment=Qt.AlignBottom | Qt.AlignRight)
         
-        footer_layout.addWidget(self.btn_volver)
-        footer_layout.addStretch()
-        
-        layout_principal.addLayout(footer_layout)
+        layout_principal.addLayout(layout_inferior)
 
     # =========================================================================
-    # LÓGICA (Adaptada para RAM y Nuevo Diseño)
+    # LÓGICA DEL ASISTENTE VIRTUAL (FLOTANTE OVERLAY)
     # =========================================================================
-    
-    def _cargar_datos_prueba(self):
-        """Datos Mock para visualizar el diseño sin DB real"""
-        # Poblar combo
-        carpetas = ["unellez", "trabajo_final", "descargas_temp"]
-        self.combo_carpetas.addItems(carpetas)
-        
-        # Poblar Tabla
-        datos = [
-            ("9", "programacion", "txt,jpeg,java", True),
-            ("8", "cualquiera", "* (Cualquiera)", True),
-            ("7", "documentos_pdf", "pdf", False),
-        ]
-        self._llenar_tabla(datos)
+    def inicializar_chat_asistente(self):
+        self.widget_chat = QFrame(self)
+        self.widget_chat.setFixedSize(360, 320)
+        self.widget_chat.setStyleSheet("""
+            QFrame#chat_principal {
+                background-color: rgba(24, 24, 27, 0.98); 
+                border-radius: 12px; 
+                border: 1px solid rgba(234, 179, 8, 0.5);
+            }
+        """)
+        self.widget_chat.setObjectName("chat_principal")
+        self.widget_chat.hide() 
 
-    def _llenar_tabla(self, filas):
-        """Método genérico para llenar la tabla con estilo moderno"""
-        self.tabla_reglas.setRowCount(0)
-        self.lbl_count.setText(f"({len(filas)} reglas)")
+        distribucion_chat = QVBoxLayout(self.widget_chat)
+        distribucion_chat.setContentsMargins(0,0,0,0)
+        distribucion_chat.setSpacing(0)
+
+        # Cabecera Chat
+        marco_cabecera = QFrame()
+        marco_cabecera.setStyleSheet("background-color: rgba(234, 179, 8, 0.15); border-top-left-radius: 12px; border-top-right-radius: 12px; border: none; border-bottom: 1px solid rgba(234, 179, 8, 0.2);")
+        distribucion_cabecera = QHBoxLayout(marco_cabecera)
+        distribucion_cabecera.setContentsMargins(15, 8, 15, 8)
         
-        for idx, fila in enumerate(filas):
-            self.tabla_reglas.insertRow(idx)
-            id_regla, nombre, ext, activa = fila
-            
-            # ID (Centrado y gris)
-            item_id = QTableWidgetItem(str(id_regla))
-            item_id.setTextAlignment(Qt.AlignCenter)
-            item_id.setForeground(QColor("#666"))
-            self.tabla_reglas.setItem(idx, 0, item_id)
-            
-            # Nombre (Blanco)
-            self.tabla_reglas.setItem(idx, 1, QTableWidgetItem(str(nombre)))
-            
-            # Extensiones (Toque amarillo suave si no es '*')
-            item_ext = QTableWidgetItem(str(ext))
-            if ext == "* (Cualquiera)":
-                item_ext.setForeground(QColor("#888"))
+        titulo_cabecera = QLabel("💬 Asistente de Reglas")
+        titulo_cabecera.setStyleSheet("color: #eab308; font-weight: 700; font-size: 13px; background: transparent; border: none;")
+        
+        btn_cerrar_chat = QPushButton("✖")
+        btn_cerrar_chat.setCursor(QCursor(Qt.PointingHandCursor))
+        btn_cerrar_chat.setFixedSize(24, 24)
+        btn_cerrar_chat.setStyleSheet("""
+            QPushButton { background: transparent; color: #a1a1aa; font-weight: bold; border: none; font-size: 14px; }
+            QPushButton:hover { color: #ef4444; }
+        """)
+        btn_cerrar_chat.clicked.connect(self.ocultar_chat)
+
+        distribucion_cabecera.addWidget(titulo_cabecera)
+        distribucion_cabecera.addStretch()
+        distribucion_cabecera.addWidget(btn_cerrar_chat)
+        distribucion_chat.addWidget(marco_cabecera)
+
+        # Cuerpo del Chat
+        cuerpo_chat = QWidget()
+        cuerpo_chat.setStyleSheet("background: transparent; border: none;")
+        distribucion_cuerpo = QVBoxLayout(cuerpo_chat)
+        distribucion_cuerpo.setContentsMargins(10, 10, 10, 10)
+        distribucion_cuerpo.setSpacing(10)
+        
+        self.area_mensajes = QScrollArea()
+        self.area_mensajes.setWidgetResizable(True)
+        self.area_mensajes.setStyleSheet("border: none; background: transparent;")
+        self.area_mensajes.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.area_mensajes.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        
+        self.contenedor_mensajes = QWidget()
+        self.contenedor_mensajes.setStyleSheet("background: transparent;")
+        self.lista_mensajes = QVBoxLayout(self.contenedor_mensajes)
+        self.lista_mensajes.setContentsMargins(0,0,0,0)
+        self.lista_mensajes.setSpacing(8)
+        self.lista_mensajes.addStretch()
+        self.area_mensajes.setWidget(self.contenedor_mensajes)
+        distribucion_cuerpo.addWidget(self.area_mensajes)
+
+        # Entrada de Texto Chat
+        self.entrada_texto_chat = QLineEdit()
+        self.entrada_texto_chat.setPlaceholderText("Escribe un comando o duda...")
+        self.entrada_texto_chat.setStyleSheet("""
+            QLineEdit {
+                background-color: rgba(0, 0, 0, 0.4); 
+                color: #ffffff; padding: 10px; 
+                border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1);
+            }
+            QLineEdit:focus { border: 1px solid #eab308; }
+        """)
+        self.entrada_texto_chat.setFixedHeight(38)
+        self.entrada_texto_chat.returnPressed.connect(self.enviar_comando_chat)
+        distribucion_cuerpo.addWidget(self.entrada_texto_chat)
+
+        distribucion_chat.addWidget(cuerpo_chat)
+
+    def posicionar_chat_flotante(self):
+        if hasattr(self, 'widget_chat'):
+            margen_x = 40
+            margen_y = 40
+            pos_x = self.width() - self.widget_chat.width() - margen_x
+            pos_y = self.height() - self.widget_chat.height() - margen_y
+            self.widget_chat.move(pos_x, pos_y)
+
+    def mostrar_chat(self):
+        self.posicionar_chat_flotante()
+        self.widget_chat.raise_()
+        self.widget_chat.show()
+        self.btn_abrir_chat.hide()
+        self.entrada_texto_chat.setFocus()
+
+    def ocultar_chat(self):
+        self.widget_chat.hide()
+        self.btn_abrir_chat.show()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, 'widget_chat') and self.widget_chat.isVisible():
+            self.posicionar_chat_flotante()
+
+    def agregar_mensaje_sistema(self, texto):
+        etiqueta = QLabel(f"<b>Sistema:</b> {texto}")
+        etiqueta.setStyleSheet("color: #e4e4e7; background-color: rgba(255, 255, 255, 0.05); padding: 8px; border-radius: 6px; font-size: 11px;")
+        etiqueta.setWordWrap(True)
+        self.lista_mensajes.insertWidget(self.lista_mensajes.count()-1, etiqueta)
+        self.area_mensajes.verticalScrollBar().setValue(self.area_mensajes.verticalScrollBar().maximum())
+
+    def enviar_comando_chat(self):
+        texto = self.entrada_texto_chat.text().strip()
+        if not texto: return
+        
+        etiqueta_usuario = QLabel(f"<b>Tú:</b> {texto}")
+        etiqueta_usuario.setStyleSheet("color: #a1a1aa; font-size: 11px; padding: 4px;")
+        self.lista_mensajes.insertWidget(self.lista_mensajes.count()-1, etiqueta_usuario)
+
+        if self.asistente:
+            respuesta = self.asistente.procesar_peticion(texto)
+            if isinstance(respuesta, dict) and 'message' in respuesta:
+                self.agregar_mensaje_sistema(respuesta.get('message'))
             else:
-                item_ext.setForeground(QColor("#fbbf24")) # Amarillo Oro
-            self.tabla_reglas.setItem(idx, 2, item_ext)
-            
-            # Estado (Badge visual moderno)
-            txt_estado = "🟢 Activa" if activa else "⚪ Inactiva"
-            item_estado = QTableWidgetItem(txt_estado)
-            if not activa:
-                item_estado.setForeground(QColor("#888"))
-            self.tabla_reglas.setItem(idx, 3, item_estado)
-            
-            # Setear alto de fila para que respire el diseño
-            self.tabla_reglas.setRowHeight(idx, 45)
+                self.agregar_mensaje_sistema(str(respuesta))
+        else:
+            self.agregar_mensaje_sistema("El asistente no está conectado en modo prueba.")
 
+        self.entrada_texto_chat.clear()
+        self.area_mensajes.verticalScrollBar().setValue(self.area_mensajes.verticalScrollBar().maximum())
+        
+        # Al igual que en la config, refrescamos las listas tras una posible orden del asistente
+        self.actualizar_selector_carpetas()
+        self.cargar_reglas_por_carpeta()
+
+    # =========================================================================
+    # LÓGICA BASE DE DATOS Y REGLAS
+    # =========================================================================
     def conectar_db(self):
-        """Mismo método de conexión, asegurando CASCADE delete"""
         if not self.asistente: return None, None
         import sqlite3
         conn = sqlite3.connect(str(self.asistente.modelo_org.db_path))
-        conn.execute("PRAGMA foreign_keys = ON") # Importante para borrar en cascada
+        conn.execute("PRAGMA foreign_keys = ON")
         cursor = conn.cursor()
-        # Estructura simplificada (asumiendo que las extensiones se guardan serializadas en 'extension')
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS reglas_organizacion (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -426,15 +513,12 @@ class VistaReglasOrganizacion(QWidget):
         return conn, cursor
 
     def actualizar_selector_carpetas(self):
-        """Lógica real de carga de carpetas"""
         if not self.asistente: return
         self.combo_carpetas.blockSignals(True)
         self.combo_carpetas.clear()
         self.combo_carpetas.addItem("Seleccione carpeta...")
-        
         try:
             conn, cursor = self.conectar_db()
-            # Asumimos tabla 'directorios_destino' de Fase 1
             cursor.execute("SELECT nombre_alias FROM directorios_destino ORDER BY nombre_alias ASC")
             carpetas = [fila[0] for fila in cursor.fetchall() if fila[0]]
             conn.close()
@@ -447,17 +531,60 @@ class VistaReglasOrganizacion(QWidget):
         except Exception as e:
             print(f"Error base datos: {e}")
         self.combo_carpetas.blockSignals(False)
+        self.cargar_reglas_por_carpeta()
+
+    def cargar_reglas_por_carpeta(self):
+        carpeta_actual = self.combo_carpetas.currentText()
+        if not carpeta_actual or carpeta_actual == "Seleccione carpeta..." or not self.asistente:
+            self.tabla_reglas.setRowCount(0)
+            self.lbl_count.setText("(0 reglas)")
+            return
+
+        try:
+            conn, cursor = self.conectar_db()
+            cursor.execute("SELECT id, nombre, extension, activa FROM reglas_organizacion WHERE carpeta_destino = ? ORDER BY id DESC", (carpeta_actual,))
+            filas = cursor.fetchall()
+            conn.close()
+
+            self.tabla_reglas.setRowCount(0)
+            self.lbl_count.setText(f"({len(filas)} reglas)")
+            for idx, fila in enumerate(filas):
+                self.tabla_reglas.insertRow(idx)
+                
+                # ID
+                item_id = QTableWidgetItem(str(fila[0]))
+                item_id.setTextAlignment(Qt.AlignCenter)
+                item_id.setForeground(QColor("#666"))
+                self.tabla_reglas.setItem(idx, 0, item_id)
+                
+                # Nombre
+                self.tabla_reglas.setItem(idx, 1, QTableWidgetItem(str(fila[1])))
+                
+                # Extensión
+                ext_val = fila[2] if fila[2] else "* (Cualquiera)"
+                item_ext = QTableWidgetItem(ext_val)
+                if ext_val == "* (Cualquiera)":
+                    item_ext.setForeground(QColor("#888"))
+                else:
+                    item_ext.setForeground(QColor("#fbbf24"))
+                self.tabla_reglas.setItem(idx, 2, item_ext)
+                
+                # Estado
+                txt_estado = "🟢 Activa" if fila[3] == 1 else "⚪ Inactiva"
+                item_estado = QTableWidgetItem(txt_estado)
+                if fila[3] == 0: item_estado.setForeground(QColor("#888"))
+                self.tabla_reglas.setItem(idx, 3, item_estado)
+                
+                self.tabla_reglas.setRowHeight(idx, 45)
+        except Exception as e:
+            print(f"Error al cargar reglas: {e}")
 
     def agregar_nueva_regla(self):
-        """INSERT optimizado (RAM friendly)"""
         carpeta = self.combo_carpetas.currentText()
         nombre = self.input_nombre_regla.text().strip()
-        
-        # Procesar extensiones desde QLineEdit (Mucho más ligero que leer QListWidget)
         ext_raw = self.input_extensiones.text().strip()
         activa = 1 if self.check_activa.isChecked() else 0
 
-        # Validaciones básicas
         if self.combo_carpetas.currentIndex() == 0:
             self._mostrar_alerta("Falta Destino", "Seleccione una carpeta objetivo.")
             return
@@ -470,40 +597,26 @@ class VistaReglasOrganizacion(QWidget):
             self.input_extensiones.setFocus()
             return
 
-        # Normalizar extensiones: limpiar espacios, quitar puntos extra
         if ext_raw != "*":
             lista_ext = [e.strip().lstrip('.').lower() for e in ext_raw.split(',') if e.strip()]
             ext_serializada = ",".join(lista_ext)
         else:
-            ext_serializada = None # NULL en DB significa 'Cualquiera'
+            ext_serializada = None 
 
-        # Intento de guardado mock/real
         if not self.asistente:
-            print(f"MOCK INSERT: {nombre}, Ext: {ext_serializada}, Carpeta: {carpeta}, Activa: {activa}")
-            # Añadir visualmente a la prueba
-            current_rows = self.tabla_reglas.rowCount()
-            self.tabla_reglas.insertRow(0)
-            self.tabla_reglas.setItem(0,0, QTableWidgetItem("NUEVO"))
-            self.tabla_reglas.setItem(0,1, QTableWidgetItem(nombre))
-            self.tabla_reglas.setItem(0,2, QTableWidgetItem(ext_serializada if ext_serializada else "* (Cualquiera)"))
-            self.tabla_reglas.setItem(0,3, QTableWidgetItem("🟢 Activa" if activa else "⚪ Inactiva"))
-            self.tabla_reglas.setRowHeight(0, 45)
+            self._mostrar_alerta("Modo Prueba", f"Regla '{nombre}' añadida virtualmente.")
             self._limpiar_formulario()
             return
 
-        # Lógica Real SQL
         try:
             conn, cursor = self.conectar_db()
-            cursor.execute("""
-                INSERT INTO reglas_organizacion (nombre, extension, carpeta_destino, activa)
-                VALUES (?, ?, ?, ?)
-            """, (nombre, ext_serializada, carpeta, activa))
+            cursor.execute("INSERT INTO reglas_organizacion (nombre, extension, carpeta_destino, activa) VALUES (?, ?, ?, ?)", 
+                           (nombre, ext_serializada, carpeta, activa))
             conn.commit()
             conn.close()
             
             self._limpiar_formulario()
-            # Recargar tabla (necesitas implementar cargar_reglas_por_carpeta similar al original)
-            # self.cargar_reglas_por_carpeta() 
+            self.cargar_reglas_por_carpeta() 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"No se pudo guardar: {e}")
 
@@ -516,7 +629,6 @@ class VistaReglasOrganizacion(QWidget):
         id_regla = self.tabla_reglas.item(fila_sel, 0).text()
         nombre_regla = self.tabla_reglas.item(fila_sel, 1).text()
 
-        # Custom MessageBox con estilo
         msg = QMessageBox(self)
         msg.setWindowTitle("Confirmar eliminación")
         msg.setIcon(QMessageBox.Warning)
@@ -524,24 +636,17 @@ class VistaReglasOrganizacion(QWidget):
         msg.setInformativeText("Esta acción no se puede deshacer.")
         btn_si = msg.addButton("Eliminar", QMessageBox.YesRole)
         msg.addButton("Cancelar", QMessageBox.NoRole)
-        
-        # Aplicar estilo al msgbox (toque amarillo al botón default)
         msg.setStyleSheet(QSS_MODERNO + "QPushButton { padding: 8px 20px; min-width: 80px; }")
-        
         msg.exec_()
 
         if msg.clickedButton() == btn_si:
-            if not self.asistente:
-                print(f"MOCK DELETE: ID {id_regla}")
-                self.tabla_reglas.removeRow(fila_sel)
-                return
-
+            if not self.asistente: return
             try:
                 conn, cursor = self.conectar_db()
                 cursor.execute("DELETE FROM reglas_organizacion WHERE id = ?", (id_regla,))
                 conn.commit()
                 conn.close()
-                # self.cargar_reglas_por_carpeta() # Recargar real
+                self.cargar_reglas_por_carpeta()
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"No se pudo eliminar: {e}")
 
@@ -552,41 +657,34 @@ class VistaReglasOrganizacion(QWidget):
         self.input_nombre_regla.setFocus()
 
     def _mostrar_alerta(self, titulo, texto):
-        """MessageBox estilizado rápido"""
         msg = QMessageBox(self)
         msg.setWindowTitle(titulo)
         msg.setText(texto)
         msg.setStyleSheet(QSS_MODERNO + "QPushButton { padding: 8px 20px; }")
         msg.exec_()
 
-# =============================================================================
-# EJEMPLO DE EJECUCIÓN (Para probar el diseño inmediatamente)
-# =============================================================================
+    def _cargar_datos_prueba(self):
+        self.combo_carpetas.addItems(["unellez", "trabajo_final"])
+        self.tabla_reglas.setRowCount(0)
+        self.lbl_count.setText("(1 regla demo)")
+        self.tabla_reglas.insertRow(0)
+        self.tabla_reglas.setItem(0, 0, QTableWidgetItem("1"))
+        self.tabla_reglas.setItem(0, 1, QTableWidgetItem("Demo"))
+        self.tabla_reglas.setItem(0, 2, QTableWidgetItem("pdf"))
+        self.tabla_reglas.setItem(0, 3, QTableWidgetItem("🟢 Activa"))
+
+# Bloque de prueba (solo se ejecuta si corres este archivo directamente)
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    
-    # Configuración de tipografía global para mejor renderizado
     font = QFont("Segoe UI", 10)
     app.setFont(font)
-
-    # Crear contenedor principal para simular la ventana de la App con transparencia
     window = QWidget()
-    window.setWindowTitle("PyOrganizer - Panel de Control Moderno")
+    window.setWindowTitle("PyOrganizer - Reglas con Chat")
     window.resize(1280, 800)
-    
-    # --- CLAVE PARA LA TRANSPARENCIA ---
-    window.setAttribute(Qt.WA_TranslucentBackground) # Fondo de ventana transparente
-    # window.setWindowFlags(Qt.FramelessWindowHint) # Opcional: quitar bordes de Windows
-    
-    # Fondo falso detrás (para simular el escritorio si no usas Frameless)
-    # window.setStyleSheet("background-color: #111;") 
-
+    window.setAttribute(Qt.WA_TranslucentBackground) 
     main_layout = QVBoxLayout(window)
     main_layout.setContentsMargins(0,0,0,0)
-
-    # Instanciar la vista
     vista = VistaReglasOrganizacion()
     main_layout.addWidget(vista)
-
     window.show()
     sys.exit(app.exec_())
