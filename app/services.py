@@ -21,7 +21,8 @@ def get_total_reglas(db_path: str) -> int:
     conn = _connect(db_path)
     try:
         cur = conn.cursor()
-        cur.execute('SELECT COUNT(*) FROM reglas_organizacion')
+        # Contar solo reglas activas
+        cur.execute('SELECT COUNT(*) FROM reglas_organizacion WHERE activa = 1')
         row = cur.fetchone()
         return int(row[0]) if row else 0
     finally:

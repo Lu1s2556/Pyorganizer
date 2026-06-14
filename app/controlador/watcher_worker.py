@@ -94,32 +94,16 @@ class WatcherWorkerThread(QThread):
     def _process_path(self, path: str):
         lower = path.lower()
         if lower.endswith('.crdownload') or lower.endswith('.part') or lower.endswith('.tmp'):
-            try:
-                print(f"[watcher_worker] ignoring temporary file: {path}")
-            except Exception:
-                pass
             self._release_queued_path(path)
             return
 
-        try:
-            print(f"[watcher_worker] waiting for file ready: {path}")
-        except Exception:
-            pass
 
         ready = wait_for_file_ready(path, timeout=300, poll_interval=1.0)
         if not ready:
             self._release_queued_path(path)
             return
 
-        try:
-            print(f"[watcher_worker] file ready: {path}")
-        except Exception:
-            pass
-
-        try:
-            self.file_ready.emit(path)
-        except Exception:
-            pass
+        self.file_ready.emit(path)
 
         if not self._db_path:
             self._release_queued_path(path)

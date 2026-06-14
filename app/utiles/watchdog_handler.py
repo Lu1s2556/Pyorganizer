@@ -89,49 +89,8 @@ class WatchdogHandler(FileSystemEventHandler):
 
             if self.event_queue is not None:
                 self.event_queue.put((abs_path, event_type))
-                try:
-                    print(f"[watchdog_handler] queued: {abs_path} ({event_type})")
-                except Exception:
-                    pass
         except Exception:
             pass
-
-    def _should_ignore(self, path: str) -> bool:
-        if os.path.isdir(path):
-            return True
-
-        name = os.path.basename(path)
-        tmp_indicators = (".part", ".crdownload", ".tmp", "~")
-        if any(name.endswith(ind) for ind in tmp_indicators):
-            return True
-        if name.startswith('.'):
-            return True
-
-        if self.watch_root and not os.path.commonpath([self.watch_root, os.path.abspath(path)]) == self.watch_root:
-            return True
-
-        return False
-
-    def _enqueue_if_valid(self, path: str, event_type: str):
-        try:
-            abs_path = os.path.abspath(path)
-            if self._should_ignore(abs_path):
-                return
-
-            with QMutexLocker(self.queue_lock):
-                if abs_path in self.queued_paths:
-                    return
-                self.queued_paths.add(abs_path)
-
-            if self.event_queue is not None:
-                self.event_queue.put((abs_path, event_type))
-                try:
-                    print(f"[watchdog_handler] queued: {abs_path} ({event_type})")
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
     def on_created(self, event):
         self._enqueue_if_valid(event.src_path, 'created')
 

@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QScrollArea, QLineEdit, QApplication,
                                QStackedWidget, QMessageBox)
 from PySide6.QtCore import Qt, QSize, QThread, Signal, QTimer
-from PySide6.QtGui import QColor, QFont, QPainter
+from PySide6.QtGui import QColor, QFont, QPainter, QGuiApplication, QCursor
 from PySide6.QtCharts import QChartView, QChart, QBarSeries, QBarSet, QBarCategoryAxis, QValueAxis, QPieSeries, QPieSlice
 
 from app.services import get_total_movidos, get_total_reglas
@@ -62,6 +62,7 @@ class DashboardOrganizador(QMainWindow):
         self.asistente = AsistenteVigiData()
         self.escaneos_ejecutados = 0
         self.ultimo_escaneo = None
+        self._monitor_message_cache = set()
         
         # Control de concurrencia
         self.escaneo_en_progreso = False
@@ -83,6 +84,7 @@ class DashboardOrganizador(QMainWindow):
         self.inicializar_barra_lateral()
         self.inicializar_chat_asistente()
         self.inicializar_vistas_contenido() 
+        self._maximize_on_current_screen()
 
         # Conectar señal global para refrescar estadísticas
         try:
@@ -108,9 +110,9 @@ class DashboardOrganizador(QMainWindow):
         try:
             self.temporizador_escaneo = QTimer(self)
             self.temporizador_escaneo.timeout.connect(self.iniciar_escaneo)
-            self.temporizador_escaneo.start(60000) 
-        except Exception as e:
-            print(f"Error al inicializar el temporizador global: {e}")
+            self.temporizador_escaneo.start(60000)
+        except Exception:
+            pass
 
         # Arranque automático al iniciar
         QTimer.singleShot(3000, self.iniciar_escaneo)
@@ -270,9 +272,10 @@ class DashboardOrganizador(QMainWindow):
             pass
 
         self.tarjeta_archivos = TarjetaMetrica("ARCHIVOS PROCESADOS", total_mov, "#ffffff")
-        self.tarjeta_reglas = TarjetaMetrica("REGLAS DEFINIDAS", total_reglas, "#eab308")
+        self.tarjeta_reglas = TarjetaMetrica("REGLAS ACTIVAS", total_reglas, "#eab308")
         self.tarjeta_escaneos = TarjetaMetrica("ESCANEOS EJECUTADOS", str(self.escaneos_ejecutados), "#22c55e")
-        texto_ultimo = self.ultimo_escaneo.strftime("%Y-%m-%d %H:%M:%S") if self.ultimo_escaneo else "Nunca"
+        # Mostrar solo la hora en formato 12H para el último escaneo
+        texto_ultimo = self.ultimo_escaneo.strftime("%I:%M %p") if self.ultimo_escaneo else "Nunca"
         self.tarjeta_ultimo = TarjetaMetrica("ÚLTIMO ESCANEO", texto_ultimo, "#eab308")
 
         cuadricula.addWidget(self.tarjeta_archivos, 0, 0)
@@ -384,6 +387,12 @@ class DashboardOrganizador(QMainWindow):
         self.refrescar_panel_resumen()
 
     def registrar_accion_interfaz(self, mensaje):
+        # Evitar mensajes de monitor duplicados para cola/saturación
+        if mensaje.startswith("👀 [Monitor]"):
+            if mensaje in self._monitor_message_cache:
+                return
+            self._monitor_message_cache.add(mensaje)
+
         etiqueta_accion = QLabel(mensaje)
         etiqueta_accion.setStyleSheet("color: #4ade80; font-size: 11px; padding: 6px; background-color: rgba(34, 197, 94, 0.1); border-left: 2px solid #4ade80; border-radius: 3px;")
         self.lista_acciones.insertWidget(self.lista_acciones.count() - 1, etiqueta_accion)
@@ -409,13 +418,28 @@ class DashboardOrganizador(QMainWindow):
             pass
         super().closeEvent(evento)
 
+    def _maximize_on_current_screen(self):
+        try:
+            pos = QCursor.pos()
+            screen = QGuiApplication.screenAt(pos) or QGuiApplication.primaryScreen()
+            if screen:
+                geom = screen.availableGeometry()
+                self.setGeometry(geom)
+            self.showMaximized()
+        except Exception:
+            try:
+                self.showMaximized()
+            except Exception:
+                pass
+
     def refrescar_panel_resumen(self):
         try:
             ruta_bd = self.asistente.modelo_org.db_path
             total_mov = f"{get_total_movidos(ruta_bd):,}"
             total_reglas = f"{get_total_reglas(ruta_bd):,}"
             escaneos = str(self.escaneos_ejecutados)
-            texto_ultimo = self.ultimo_escaneo.strftime("%Y-%m-%d %H:%M:%S") if self.ultimo_escaneo else "Nunca"
+            # Mostrar solo hora 12H para el último escaneo
+            texto_ultimo = self.ultimo_escaneo.strftime("%I:%M %p") if self.ultimo_escaneo else "Nunca"
             
             self.tarjeta_archivos.actualizar_valor(total_mov)
             self.tarjeta_reglas.actualizar_valor(total_reglas)
@@ -429,17 +453,24 @@ class DashboardOrganizador(QMainWindow):
 
             if getattr(self, 'vista_grafico_stats', None):
                 try:
+                    colors = ["#eab308", "#22c55e", "#38bdf8", "#a855f7", "#f97316", "#fb7185"]
                     series = QPieSeries()
                     total = sum([cnt for _, cnt in top_archivos]) if top_archivos else 0
-                    for ext, cnt in top_archivos:
+                    for idx, (ext, cnt) in enumerate(top_archivos):
                         slice = QPieSlice(ext, cnt)
                         slice.setLabelVisible(True)
                         slice.setLabel(f"{ext} ({cnt})")
+                        slice.setBrush(QColor(colors[idx % len(colors)]))
+                        slice.setBorderColor(QColor(255, 255, 255, 60))
+                        slice.setLabelColor(QColor("#f8fafc"))
                         series.append(slice)
                     # Si no hay datos, mostrar un slice único
                     if not top_archivos:
                         s = QPieSlice('Sin datos', 1)
                         s.setLabelVisible(True)
+                        s.setBrush(QColor("#6b7280"))
+                        s.setBorderColor(QColor(255, 255, 255, 60))
+                        s.setLabelColor(QColor("#f8fafc"))
                         series.append(s)
 
                     grafico = QChart()
@@ -453,8 +484,8 @@ class DashboardOrganizador(QMainWindow):
                 except Exception:
                     pass
 
-        except Exception as e:
-            print(f"Error actualizando métricas: {e}")
+        except Exception:
+            pass
 
     def inicializar_chat_asistente(self):
         """Inicializa el widget del Asistente Virtual con diseño integrado"""
