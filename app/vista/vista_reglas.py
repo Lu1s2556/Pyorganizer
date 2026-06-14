@@ -246,6 +246,15 @@ class VistaReglasOrganizacion(QWidget):
         self.container_ext.addWidget(lbl_tip_ext)
         self.container_ext.setSpacing(0)
 
+        self.container_keywords = QVBoxLayout()
+        self.input_palabras_clave = QLineEdit()
+        self.input_palabras_clave.setPlaceholderText("factura, proyecto, tarea")
+        lbl_tip_keywords = QLabel("💡 Tip: Separe palabras clave o términos de nombre con comas.")
+        lbl_tip_keywords.setStyleSheet("color: #666; font-size: 11px; margin-top: 4px; padding-left: 2px;")
+        self.container_keywords.addWidget(self.input_palabras_clave)
+        self.container_keywords.addWidget(lbl_tip_keywords)
+        self.container_keywords.setSpacing(0)
+
         self.check_activa = QCheckBox("Habilitar regla inmediatamente")
         self.check_activa.setChecked(True)
 
@@ -255,6 +264,8 @@ class VistaReglasOrganizacion(QWidget):
         layout_form.addRow(lbl_nom, self.input_nombre_regla)
         lbl_ext = QLabel("Extensiones:"); lbl_ext.setStyleSheet("color: #888; font-weight: bold;")
         layout_form.addRow(lbl_ext, self.container_ext)
+        lbl_keywords = QLabel("Palabras clave/Nombre:"); lbl_keywords.setStyleSheet("color: #888; font-weight: bold;")
+        layout_form.addRow(lbl_keywords, self.container_keywords)
         layout_form.addRow("", self.check_activa)
 
         layout_form_container.addLayout(layout_form)
@@ -290,8 +301,8 @@ class VistaReglasOrganizacion(QWidget):
         layout_tabla_v.addLayout(head_tabla)
 
         self.tabla_reglas = QTableWidget()
-        self.tabla_reglas.setColumnCount(4)
-        self.tabla_reglas.setHorizontalHeaderLabels(["ID", "Nombre de Regla", "Extensiones", "Estado"])
+        self.tabla_reglas.setColumnCount(5)
+        self.tabla_reglas.setHorizontalHeaderLabels(["ID", "Nombre de Regla", "Extensiones", "Palabras clave", "Estado"])
         self.tabla_reglas.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.tabla_reglas.setSelectionMode(QAbstractItemView.SingleSelection)
         self.tabla_reglas.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -302,7 +313,8 @@ class VistaReglasOrganizacion(QWidget):
         header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(1, QHeaderView.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.Stretch)
+        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
 
         layout_tabla_v.addWidget(self.tabla_reglas)
 
@@ -542,7 +554,7 @@ class VistaReglasOrganizacion(QWidget):
 
         try:
             conn, cursor = self.conectar_db()
-            cursor.execute("SELECT id, nombre, extension, activa FROM reglas_organizacion WHERE carpeta_destino = ? ORDER BY id DESC", (carpeta_actual,))
+            cursor.execute("SELECT id, nombre, extension, palabras_clave, activa FROM reglas_organizacion WHERE carpeta_destino = ? ORDER BY id DESC", (carpeta_actual,))
             filas = cursor.fetchall()
             conn.close()
 
@@ -569,11 +581,17 @@ class VistaReglasOrganizacion(QWidget):
                     item_ext.setForeground(QColor("#fbbf24"))
                 self.tabla_reglas.setItem(idx, 2, item_ext)
                 
+                # Palabras clave / Nombre
+                palabras_val = fila[3] if fila[3] else "-"
+                item_palabras = QTableWidgetItem(str(palabras_val))
+                item_palabras.setForeground(QColor("#e5e7eb"))
+                self.tabla_reglas.setItem(idx, 3, item_palabras)
+                
                 # Estado
-                txt_estado = "🟢 Activa" if fila[3] == 1 else "⚪ Inactiva"
+                txt_estado = "🟢 Activa" if fila[4] == 1 else "⚪ Inactiva"
                 item_estado = QTableWidgetItem(txt_estado)
-                if fila[3] == 0: item_estado.setForeground(QColor("#888"))
-                self.tabla_reglas.setItem(idx, 3, item_estado)
+                if fila[4] == 0: item_estado.setForeground(QColor("#888"))
+                self.tabla_reglas.setItem(idx, 4, item_estado)
                 
                 self.tabla_reglas.setRowHeight(idx, 45)
         except Exception as e:
@@ -583,6 +601,7 @@ class VistaReglasOrganizacion(QWidget):
         carpeta = self.combo_carpetas.currentText()
         nombre = self.input_nombre_regla.text().strip()
         ext_raw = self.input_extensiones.text().strip()
+        palabras_raw = self.input_palabras_clave.text().strip()
         activa = 1 if self.check_activa.isChecked() else 0
 
         if self.combo_carpetas.currentIndex() == 0:
@@ -603,6 +622,10 @@ class VistaReglasOrganizacion(QWidget):
         else:
             ext_serializada = None 
 
+        palabras_serializadas = None
+        if palabras_raw:
+            palabras_serializadas = ",".join([p.strip().lower() for p in palabras_raw.split(',') if p.strip()])
+
         if not self.asistente:
             self._mostrar_alerta("Modo Prueba", f"Regla '{nombre}' añadida virtualmente.")
             self._limpiar_formulario()
@@ -610,8 +633,8 @@ class VistaReglasOrganizacion(QWidget):
 
         try:
             conn, cursor = self.conectar_db()
-            cursor.execute("INSERT INTO reglas_organizacion (nombre, extension, carpeta_destino, activa) VALUES (?, ?, ?, ?)", 
-                           (nombre, ext_serializada, carpeta, activa))
+            cursor.execute("INSERT INTO reglas_organizacion (nombre, extension, palabras_clave, carpeta_destino, activa) VALUES (?, ?, ?, ?, ?)", 
+                           (nombre, ext_serializada, palabras_serializadas, carpeta, activa))
             conn.commit()
             conn.close()
             
@@ -653,6 +676,7 @@ class VistaReglasOrganizacion(QWidget):
     def _limpiar_formulario(self):
         self.input_nombre_regla.clear()
         self.input_extensiones.clear()
+        self.input_palabras_clave.clear()
         self.check_activa.setChecked(True)
         self.input_nombre_regla.setFocus()
 

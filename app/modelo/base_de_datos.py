@@ -103,6 +103,7 @@ class GestorBaseDatos:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 nombre TEXT NOT NULL,
                 extension TEXT,
+                palabras_clave TEXT,
                 carpeta_destino TEXT NOT NULL,
                 activa BOOLEAN DEFAULT 1,
                 fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -170,6 +171,11 @@ class GestorBaseDatos:
                 self.migrar_regla_extensiones()
             except Exception:
                 pass
+            # Asegurar que la columna palabras_clave exista en reglas_organizacion
+            try:
+                self.migrar_agregar_palabras_clave_reglas_organizacion()
+            except Exception:
+                pass
             # Asegurar compatibilidad de columnas en directorios_destino
             try:
                 self.migrar_directorios_destino_columnas()
@@ -215,6 +221,7 @@ class GestorBaseDatos:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 nombre TEXT NOT NULL,
                 extension TEXT,
+                palabras_clave TEXT,
                 carpeta_destino TEXT NOT NULL,
                 activa BOOLEAN DEFAULT 1,
                 fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -222,8 +229,8 @@ class GestorBaseDatos:
         """)
 
         self.db.cursor.execute("""
-            INSERT INTO reglas_organizacion_new (id, nombre, extension, carpeta_destino, activa, fecha_creacion)
-            SELECT id, nombre, extension, carpeta_destino, activa, fecha_creacion FROM reglas_organizacion
+            INSERT INTO reglas_organizacion_new (id, nombre, extension, palabras_clave, carpeta_destino, activa, fecha_creacion)
+            SELECT id, nombre, extension, palabras_clave, carpeta_destino, activa, fecha_creacion FROM reglas_organizacion
         """)
 
         self.db.cursor.execute("DROP TABLE IF EXISTS reglas_organizacion")
