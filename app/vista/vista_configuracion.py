@@ -3,6 +3,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                                QTableWidgetItem, QHeaderView, QMessageBox, QFileDialog, QScrollArea)
 from PySide6.QtGui import QFont, QCursor
 from PySide6.QtCore import Qt
+from app.signals import app_signals
 from pathlib import Path
 import sqlite3
 
@@ -456,6 +457,10 @@ class VistaConfiguracionGlobal(QWidget):
             cursor.execute("INSERT INTO directorios_destino (ruta, nombre_alias) VALUES (?, ?)", (ruta, nombre))
             conn.commit(); conn.close()
             self.input_alias_destino.clear(); self.input_ruta_destino.clear(); self.cargar_destinos()
+            try:
+                app_signals.destinos_changed.emit()
+            except Exception:
+                pass
         except sqlite3.IntegrityError:
             QMessageBox.warning(self, "Destino existente", "El alias o la ruta ya existen en los destinos configurados.")
         except Exception:
@@ -469,4 +474,8 @@ class VistaConfiguracionGlobal(QWidget):
             cursor.execute("DELETE FROM directorios_destino WHERE id = ?", (self.tabla_destinos.item(fila, 0).text(),))
             conn.commit(); conn.close()
             self.cargar_destinos()
+            try:
+                app_signals.destinos_changed.emit()
+            except Exception:
+                pass
         except Exception: pass

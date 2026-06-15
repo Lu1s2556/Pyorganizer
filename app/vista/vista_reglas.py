@@ -6,6 +6,8 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                                QAbstractItemView, QCheckBox, QScrollArea)
 from PySide6.QtGui import QFont, QColor, QCursor
 from PySide6.QtCore import Qt
+import os
+from app.signals import app_signals
 
 # =============================================================================
 # HOJA DE ESTILO MAESTRA (QSS) - Diseño Moderno, Transparente y Amarillo
@@ -182,7 +184,13 @@ class VistaReglasOrganizacion(QWidget):
             self.agregar_mensaje_sistema("Estoy listo para ayudarte a crear o modificar reglas de organización.")
         except Exception:
             # Fallback para vista de prueba si no hay base de datos
-            self._cargar_datos_prueba() 
+            self._cargar_datos_prueba()
+
+        # Conectar señal para refrescar destinos cuando cambian
+        try:
+            app_signals.destinos_changed.connect(self.actualizar_selector_carpetas)
+        except Exception:
+            pass
 
     def init_ui(self):
         layout_principal = QVBoxLayout(self)
@@ -531,12 +539,22 @@ class VistaReglasOrganizacion(QWidget):
         self.combo_carpetas.addItem("Seleccione carpeta...")
         try:
             conn, cursor = self.conectar_db()
-            cursor.execute("SELECT nombre_alias FROM directorios_destino ORDER BY nombre_alias ASC")
-            carpetas = [fila[0] for fila in cursor.fetchall() if fila[0]]
+            cursor.execute("SELECT nombre_alias, ruta FROM directorios_destino ORDER BY nombre_alias ASC")
+            filas = cursor.fetchall()
             conn.close()
-            
+
+            carpetas = []
+            for nombre_alias, ruta in filas:
+                try:
+                    if ruta and os.path.exists(ruta):
+                        carpetas.append(nombre_alias)
+                except Exception:
+                    # si no podemos verificar la ruta, aún añadimos el alias
+                    carpetas.append(nombre_alias)
+
             if carpetas:
                 self.combo_carpetas.addItems(carpetas)
+                self.input_nombre_regla.setEnabled(True)
             else:
                 self.input_nombre_regla.setPlaceholderText("Primero agregue carpetas en Fase 1")
                 self.input_nombre_regla.setEnabled(False)
@@ -544,6 +562,14 @@ class VistaReglasOrganizacion(QWidget):
             print(f"Error base datos: {e}")
         self.combo_carpetas.blockSignals(False)
         self.cargar_reglas_por_carpeta()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        try:
+            # Forzar actualización dinámica cada vez que la vista se muestra
+            self.actualizar_selector_carpetas()
+        except Exception:
+            pass
 
     def cargar_reglas_por_carpeta(self):
         carpeta_actual = self.combo_carpetas.currentText()

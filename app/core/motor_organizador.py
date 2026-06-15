@@ -1,3 +1,4 @@
+import gc
 import os
 import shutil
 import sqlite3
@@ -125,6 +126,7 @@ class _CreatedHandler(FileSystemEventHandler):
 class MotorOrganizadorCore:
     def __init__(self, db_path):
         self.db_path = db_path
+        self.asistente = AsistenteVigiData()
 
     def _conectar_db(self):
         return sqlite3.connect(str(self.db_path))
@@ -147,7 +149,7 @@ class MotorOrganizadorCore:
 
         # 3. Obtener reglas de organización activas por carpeta de destino filtrada (Fase 2)
         cursor.execute("""
-            SELECT id, extension, carpeta_destino, nombre 
+            SELECT id, extension, palabras_clave, carpeta_destino, nombre 
             FROM reglas_organizacion 
             WHERE activa = 1 
             ORDER BY fecha_creacion DESC
@@ -157,14 +159,18 @@ class MotorOrganizadorCore:
         for fila in filas_reglas:
             rid = fila[0]
             legacy_ext = fila[1].strip().lower() if fila[1] else None
+            raw_keywords = fila[2]
             exts = []
+            keywords = []
+
             # Incluir valor legacy si existe (soporta coma-separado)
             if legacy_ext:
                 parts = [p.strip() for p in legacy_ext.split(',') if p.strip()]
                 for p in parts:
                     if not p.startswith('.'):
                         p = f'.{p.lstrip('.')}'
-                    exts.append(p)
+                    if p not in exts:
+                        exts.append(p)
 
             # Intentar cargar extensiones normalizadas desde regla_extensiones
             try:
@@ -179,11 +185,17 @@ class MotorOrganizadorCore:
                 # Tabla posiblemente inexistente en versiones viejas
                 pass
 
+            if raw_keywords:
+                for keyword in [k.strip().lower() for k in str(raw_keywords).split(',') if k.strip()]:
+                    if keyword not in keywords:
+                        keywords.append(keyword)
+
             reglas.append({
                 "id": rid,
                 "extensions": exts if exts else None,
-                "destino_alias": fila[2].lower().strip(),
-                "nombre_regla": fila[3]
+                "keywords": keywords if keywords else None,
+                "destino_alias": fila[3].lower().strip(),
+                "nombre_regla": fila[4]
             })
 
         conn.close()
@@ -211,18 +223,14 @@ class MotorOrganizadorCore:
                 continue
 
             regla_exts = regla.get("extensions") or []
-            # Si no hay extensiones definidas, marcar como fallback (comodín)
-            if not regla_exts:
-                if fallback_alias is None:
-                    fallback_alias = alias_dest
+            regla_keywords = regla.get("keywords") or []
+
+            if not regla_exts and not regla_keywords:
+                fallback_alias = alias_dest if fallback_alias is None else fallback_alias
                 continue
 
-            # Comparar contra todas las extensiones normalizadas
-            for rext in regla_exts:
-                if rext == ext_archivo:
-                    destino_alias = alias_dest
-                    break
-            if destino_alias:
+            if self._evaluar_regla_para_archivo(ext_archivo, archivo_path.name.lower(), regla_exts, regla_keywords):
+                destino_alias = alias_dest
                 break
 
         if destino_alias is None:
@@ -243,9 +251,8 @@ class MotorOrganizadorCore:
                         ruta_final_archivo = ruta_final_dir / f"{nombre_base}_{contador}{ext_archivo}"
                         contador += 1
 
-                # Instanciar el Asistente para procesar el movimiento físico e historial
-                asist = AsistenteVigiData()
-                moved = asist._move_and_register(archivo_path, ruta_final_dir, origen_padre)
+                # Reusar el asistente cargado por el motor para evitar instancias repetidas
+                moved = self.asistente._move_and_register(archivo_path, ruta_final_dir, origen_padre)
 
                 if moved:
                     return True, f"✅ Organizado: {archivo_path.name} ➔ {destino_alias.upper()}"
@@ -254,7 +261,18 @@ class MotorOrganizadorCore:
 
         return False, None
 
-        return False, None
+    def _evaluar_regla_para_archivo(self, ext_archivo, nombre_archivo, regla_exts, regla_keywords):
+        """Evalúa si la regla aplica según extensión, palabras clave o ambas."""
+        tiene_ext = bool(regla_exts)
+        tiene_keywords = bool(regla_keywords)
+
+        if tiene_ext and tiene_keywords:
+            return ext_archivo in regla_exts and any(keyword in nombre_archivo for keyword in regla_keywords)
+        if tiene_ext:
+            return ext_archivo in regla_exts
+        if tiene_keywords:
+            return any(keyword in nombre_archivo for keyword in regla_keywords)
+        return False
 
     def procesar_organizacion(self, callback_progreso=None):
         """
@@ -294,7 +312,18 @@ class MotorOrganizadorCore:
                     callback_progreso(f"❌ Error accediendo a {ruta_origen.name}: {str(e)}")
 
         conn.close()
-        return archivos_movidos
+        resultado = archivos_movidos
+        try:
+            origenes.clear()
+            destinos.clear()
+            reglas.clear()
+        except Exception:
+            pass
+        try:
+            gc.collect()
+        except Exception:
+            pass
+        return resultado
 
     def escanear_ahora(self, callback_progreso=None):
         """

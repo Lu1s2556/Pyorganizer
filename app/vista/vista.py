@@ -117,11 +117,45 @@ class DashboardOrganizador(QMainWindow):
         # Arranque automático al iniciar
         QTimer.singleShot(3000, self.iniciar_escaneo)
 
+    MAX_ACCIONES_EN_MEMORIA = 200
+    MAX_MENSAJES_EN_MEMORIA = 200
+
     def agregar_mensaje_sistema(self, texto):
         etiqueta = QLabel(f"<b>Sistema:</b> {texto}")
         etiqueta.setStyleSheet("color: #e4e4e7; background-color: rgba(39, 39, 42, 0.8); padding: 10px; border-radius: 6px;")
         etiqueta.setWordWrap(True)
         self.lista_mensajes.insertWidget(self.lista_mensajes.count()-1, etiqueta)
+        self._limpiar_entradas_mensajes()
+
+    def _limpiar_entradas_acciones(self):
+        try:
+            while self.lista_acciones.count() > self.MAX_ACCIONES_EN_MEMORIA:
+                item = self.lista_acciones.itemAt(0)
+                if not item:
+                    break
+                widget = item.widget()
+                if widget:
+                    self.lista_acciones.removeWidget(widget)
+                    widget.deleteLater()
+                else:
+                    self.lista_acciones.removeItem(item)
+        except Exception:
+            pass
+
+    def _limpiar_entradas_mensajes(self):
+        try:
+            while self.lista_mensajes.count() > self.MAX_MENSAJES_EN_MEMORIA:
+                item = self.lista_mensajes.itemAt(0)
+                if not item:
+                    break
+                widget = item.widget()
+                if widget:
+                    self.lista_mensajes.removeWidget(widget)
+                    widget.deleteLater()
+                else:
+                    self.lista_mensajes.removeItem(item)
+        except Exception:
+            pass
 
     def iniciar_watchdog(self):
         try:
@@ -229,6 +263,12 @@ class DashboardOrganizador(QMainWindow):
         self.pila_vistas.addWidget(self.vista_configuracion) 
         self.pila_vistas.addWidget(self.vista_reglas)     
 
+        # Refrescar vistas cuando cambie la pestaña activa (p. ej. recargar carpetas destino)
+        try:
+            self.pila_vistas.currentChanged.connect(self._on_pila_vistas_changed)
+        except Exception:
+            pass
+
         self.distribucion_principal.addWidget(self.pila_vistas)
 
     def cambiar_vista(self, indice, boton_activo):
@@ -239,6 +279,17 @@ class DashboardOrganizador(QMainWindow):
         self.boton_reglas.setStyleSheet(self.estilo_boton_base)
         
         boton_activo.setStyleSheet(self.estilo_boton_activo)
+
+    def _on_pila_vistas_changed(self, index):
+        try:
+            # índice 2 corresponde a VistaReglasOrganizacion en la pila
+            if index == 2 and hasattr(self, 'vista_reglas'):
+                try:
+                    self.vista_reglas.actualizar_selector_carpetas()
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     def crear_panel_resumen(self):
         """Estructura e interfaz del Panel de Control principal"""
@@ -382,6 +433,7 @@ class DashboardOrganizador(QMainWindow):
         etiqueta_resumen = QLabel(f"✨ Ciclo completado. Movidos: {total_archivos}")
         etiqueta_resumen.setStyleSheet("color: #000000; font-weight: 700; font-size: 11px; padding: 6px; background-color: #eab308; border-radius: 4px;")
         self.lista_acciones.insertWidget(self.lista_acciones.count() - 1, etiqueta_resumen)
+        self._limpiar_entradas_acciones()
         self.scroll_acciones.verticalScrollBar().setValue(self.scroll_acciones.verticalScrollBar().maximum())
         
         self.refrescar_panel_resumen()
@@ -396,6 +448,7 @@ class DashboardOrganizador(QMainWindow):
         etiqueta_accion = QLabel(mensaje)
         etiqueta_accion.setStyleSheet("color: #4ade80; font-size: 11px; padding: 6px; background-color: rgba(34, 197, 94, 0.1); border-left: 2px solid #4ade80; border-radius: 3px;")
         self.lista_acciones.insertWidget(self.lista_acciones.count() - 1, etiqueta_accion)
+        self._limpiar_entradas_acciones()
         self.scroll_acciones.verticalScrollBar().setValue(self.scroll_acciones.verticalScrollBar().maximum())
 
     def al_mover_archivo(self, info: dict):
@@ -453,34 +506,90 @@ class DashboardOrganizador(QMainWindow):
 
             if getattr(self, 'vista_grafico_stats', None):
                 try:
-                    colors = ["#eab308", "#22c55e", "#38bdf8", "#a855f7", "#f97316", "#fb7185"]
-                    series = QPieSeries()
-                    total = sum([cnt for _, cnt in top_archivos]) if top_archivos else 0
-                    for idx, (ext, cnt) in enumerate(top_archivos):
-                        slice = QPieSlice(ext, cnt)
-                        slice.setLabelVisible(True)
-                        slice.setLabel(f"{ext} ({cnt})")
-                        slice.setBrush(QColor(colors[idx % len(colors)]))
-                        slice.setBorderColor(QColor(255, 255, 255, 60))
-                        slice.setLabelColor(QColor("#f8fafc"))
-                        series.append(slice)
-                    # Si no hay datos, mostrar un slice único
-                    if not top_archivos:
-                        s = QPieSlice('Sin datos', 1)
-                        s.setLabelVisible(True)
-                        s.setBrush(QColor("#6b7280"))
-                        s.setBorderColor(QColor(255, 255, 255, 60))
-                        s.setLabelColor(QColor("#f8fafc"))
-                        series.append(s)
+                        colors = ["#eab308", "#22c55e", "#38bdf8", "#a855f7", "#f97316", "#fb7185"]
+                        # Palette y fuentes extraídas del tema
+                        bg_color = QColor(24, 24, 24, 0)
+                        text_color = QColor("#e4e4e7")
+                        accent_color = QColor("#eab308")
 
-                    grafico = QChart()
-                    grafico.addSeries(series)
-                    grafico.setAnimationOptions(QChart.SeriesAnimations)
-                    grafico.legend().setAlignment(Qt.AlignRight)
-                    grafico.setTitle('Distribución por extensión')
-                    grafico.setBackgroundBrush(QColor(0, 0, 0, 0))
-                    self.vista_grafico_stats.setChart(grafico)
-                    self.vista_grafico_stats.setRenderHint(QPainter.Antialiasing)
+                        # Si hay muchas categorías, usar gráfico de barras para mejor legibilidad
+                        if top_archivos and len(top_archivos) > 6:
+                            categorias = [ext for ext, _ in top_archivos]
+                            valores = [cnt for _, cnt in top_archivos]
+                            set_series = QBarSet('Cantidad')
+                            for v in valores:
+                                set_series.append(v)
+                            bar_series = QBarSeries()
+                            bar_series.append(set_series)
+
+                            grafico = QChart()
+                            grafico.addSeries(bar_series)
+                            grafico.setAnimationOptions(QChart.SeriesAnimations)
+                            axis_x = QBarCategoryAxis()
+                            axis_x.append(categorias)
+                            try:
+                                axis_x.setLabelsAngle(45)
+                            except Exception:
+                                pass
+                            axis_x.setLabelsBrush(text_color)
+                            grafico.addAxis(axis_x, Qt.AlignBottom)
+                            bar_series.attachAxis(axis_x)
+
+                            axis_y = QValueAxis()
+                            axis_y.setLabelsBrush(text_color)
+                            grafico.addAxis(axis_y, Qt.AlignLeft)
+                            bar_series.attachAxis(axis_y)
+
+                            grafico.legend().setVisible(False)
+                            grafico.setTitle('Distribución por extensión')
+                        else:
+                            series = QPieSeries()
+                            total = sum([cnt for _, cnt in top_archivos]) if top_archivos else 0
+                            for idx, (ext, cnt) in enumerate(top_archivos):
+                                slice = QPieSlice(ext, cnt)
+                                slice.setLabelVisible(True)
+                                slice.setLabel(f"{ext} ({cnt})")
+                                slice.setBrush(QColor(colors[idx % len(colors)]))
+                                slice.setBorderColor(QColor(255, 255, 255, 60))
+                                slice.setLabelColor(text_color)
+                                series.append(slice)
+                            # Si no hay datos, mostrar un slice único
+                            if not top_archivos:
+                                s = QPieSlice('Sin datos', 1)
+                                s.setLabelVisible(True)
+                                s.setBrush(QColor("#6b7280"))
+                                s.setBorderColor(QColor(255, 255, 255, 60))
+                                s.setLabelColor(text_color)
+                                series.append(s)
+
+                            grafico = QChart()
+                            grafico.addSeries(series)
+                            grafico.setAnimationOptions(QChart.SeriesAnimations)
+                            grafico.legend().setAlignment(Qt.AlignRight)
+                            grafico.setTitle('Distribución por extensión')
+
+                        # Harmonizar colores y márgenes con el tema de la app
+                        try:
+                            grafico.setBackgroundBrush(bg_color)
+                        except Exception:
+                            pass
+                        try:
+                            grafico.setTitleBrush(accent_color)
+                        except Exception:
+                            pass
+                        try:
+                            grafico.setMargins(10)
+                        except Exception:
+                            pass
+
+                        # Forzar estilos de leyenda y ejes para coincidir con la UI
+                        try:
+                            grafico.legend().setLabelColor(text_color)
+                        except Exception:
+                            pass
+
+                        self.vista_grafico_stats.setChart(grafico)
+                        self.vista_grafico_stats.setRenderHint(QPainter.Antialiasing)
                 except Exception:
                     pass
 
@@ -580,8 +689,14 @@ class DashboardOrganizador(QMainWindow):
             self.agregar_mensaje_sistema(respuesta.get('message'))
             
             for i in reversed(range(self.distribucion_sugerencias.count())):
-                widget = self.distribucion_sugerencias.itemAt(i).widget()
-                if widget: widget.setParent(None)
+                item = self.distribucion_sugerencias.itemAt(i)
+                if item:
+                    widget = item.widget()
+                    if widget:
+                        self.distribucion_sugerencias.removeWidget(widget)
+                        widget.deleteLater()
+                    else:
+                        self.distribucion_sugerencias.removeItem(item)
 
             for sugerencia in respuesta.get('suggestions', []):
                 boton_sug = QPushButton(sugerencia)

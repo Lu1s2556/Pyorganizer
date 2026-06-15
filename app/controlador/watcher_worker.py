@@ -67,6 +67,7 @@ class WatcherWorkerThread(QThread):
         self._core = None
         self._move_semaphore = QSemaphore(1)
         self._stop_requested = False
+        self._asistente = AsistenteVigiData()
 
     def set_db_path(self, db_path):
         self._db_path = db_path
@@ -149,7 +150,7 @@ class WatcherWorkerThread(QThread):
             return
 
         try:
-            asist = AsistenteVigiData()
+            asist = self._asistente
             p = Path(path)
             time.sleep(0.2)
             moved = False

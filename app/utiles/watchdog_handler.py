@@ -79,9 +79,6 @@ class WatchdogHandler(FileSystemEventHandler):
             if self._should_ignore(abs_path):
                 return
 
-            if not self._matches_keywords(abs_path):
-                return
-
             with QMutexLocker(self.queue_lock):
                 if abs_path in self.queued_paths:
                     return
