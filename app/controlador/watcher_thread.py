@@ -6,6 +6,7 @@ from watchdog.observers import Observer
 from app.controlador.watcher_worker import WatcherWorker
 from pathlib import Path
 import traceback
+import sqlite3
 
 
 class WatcherThread(QThread):
@@ -20,14 +21,17 @@ class WatcherThread(QThread):
         self.db_path = db_path
         self._observer = None
         self._running = False
-        self._worker = WatcherWorker()
-        self._worker.set_db_path(db_path)
+        self._worker = None
+
+    def _init_worker(self):
+        if self._worker is None:
+            self._worker = WatcherWorker()
+            self._worker.set_db_path(self.db_path)
 
     def run(self):
         try:
             self._observer = Observer()
-
-            rutas = self._load_origenes()
+            rutas = list(self._load_origenes())
             if not rutas:
                 self.error.emit("No hay rutas de origen activas en la base de datos")
                 return
@@ -67,16 +71,18 @@ class WatcherThread(QThread):
                 pass
 
     def _load_origenes(self):
-        rutas = []
-        try:
-            conn = sqlite3.connect(self.db_path)
-            cur = conn.cursor()
-            cur.execute("SELECT ruta FROM carpetas_monitoreadas WHERE activa = 1")
-            rutas = [row[0] for row in cur.fetchall()]
-            conn.close()
-        except Exception:
-            rutas = []
-        return rutas
+        # Retornar un generador que produce rutas una por una
+        def generar_origenes():
+            try:
+                conn = sqlite3.connect(self.db_path)
+                cur = conn.cursor()
+                cur.execute("SELECT ruta FROM carpetas_monitoreadas WHERE activa = 1")
+                for row in cur.fetchall():
+                    yield row[0]
+            except Exception:
+                return
+
+        return generar_origenes()
 
     def stop(self):
         self._running = False
@@ -91,5 +97,13 @@ class WatcherThread(QThread):
         except Exception:
             pass
 
+        if hasattr(self._worker) and self._worker:
+            try:
+                self._worker.stop()
+            except Exception:
+                pass
+            self._worker = None    
+
         if not self.isRunning():
+            self._init_worker()
             self.start()

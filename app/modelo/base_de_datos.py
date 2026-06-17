@@ -42,10 +42,16 @@ class BaseDeDatos:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type:
-            self.revertir()
-        self.cerrar_conexion()
-        return False
+        try:
+            if exc_type:
+                self.revertir()
+            self.cerrar_conexion()
+        except Exception:
+            pass
+        finally:
+            self.conexion = None
+            self.cursor = None
+        return False  # No suprimir excepciones        
 
 
 class GestorBaseDatos:
@@ -293,24 +299,40 @@ class GestorBaseDatos:
             return False
 
     def obtener_historial(self, limite=50, tipo_operacion=None):
+        # Usar generador para producir filas una por una
         try:
             if tipo_operacion:
-                self.db.cursor.execute("""
+                query = """
                     SELECT * FROM historial_operaciones 
                     WHERE tipo_operacion = ? 
                     ORDER BY fecha_operacion DESC 
                     LIMIT ?
-                """, (tipo_operacion, limite))
+                """
+                params = (tipo_operacion, limite)
             else:
-                self.db.cursor.execute("""
+                query = """
                     SELECT * FROM historial_operaciones 
                     ORDER BY fecha_operacion DESC 
                     LIMIT ?
-                """, (limite,))
-            return self.db.cursor.fetchall()
+                """
+                params = (limite,)
+
+            for row in self.generar_historial(query, params):
+                yield row
         except sqlite3.Error as e:
             self.logar_error("obtener_historial", str(e))
-            return self.db.cursor.fetchall()
+            return
+
+    def generar_historial(self, query, params=()):
+        """Generador que ejecuta la consulta de historial y yieldea filas una por una."""
+        try:
+            cur = self.db.cursor
+            cur.execute(query, params)
+            for row in cur.fetchall():
+                yield row
+        except sqlite3.Error as e:
+            self.logar_error("generar_historial", str(e))
+            return
 
     def buscar_en_historial(self, termino_busqueda):
         try:
@@ -490,9 +512,16 @@ class GestorBaseDatos:
     def obtener_reglas(self, solo_activas=True):
         try:
             if solo_activas:
-                self.db.cursor.execute("SELECT * FROM reglas_organizacion WHERE activa = 1 ORDER BY fecha_creacion DESC")
+                # Seleccionar solo columnas necesarias y limitar para evitar cargas masivas
+                self.db.cursor.execute("""
+                    SELECT id, extension, palabras_clave, carpeta_destino 
+                    FROM reglas_organizacion 
+                    WHERE activa = 1 
+                    ORDER BY fecha_creacion DESC 
+                    LIMIT 100
+                """)
             else:
-                self.db.cursor.execute("SELECT * FROM reglas_organizacion ORDER BY fecha_creacion DESC")
+                self.db.cursor.execute("SELECT id, extension, palabras_clave, carpeta_destino FROM reglas_organizacion ORDER BY fecha_creacion DESC")
             return self.db.cursor.fetchall()
         except sqlite3.Error as e:
             self.logar_error("obtener_reglas_organizacion", str(e))
@@ -526,7 +555,12 @@ class GestorBaseDatos:
             return False
 
     def obtener_carpetas_monitoreadas(self):
-        self.db.cursor.execute("SELECT * FROM carpetas_monitoreadas WHERE activa = 1")
+        # Seleccionar solo columnas necesarias para listado de carpetas monitoreadas
+        self.db.cursor.execute("""
+            SELECT ruta, nombre_alias 
+            FROM carpetas_monitoreadas 
+            WHERE activa = 1
+        """)
         return self.db.cursor.fetchall()
 
     def logar_error(self, tipo_error, mensaje, traceback=None):

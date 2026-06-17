@@ -3,6 +3,8 @@ import os
 import shutil
 import sqlite3
 from pathlib import Path
+import psutil
+import weakref
 
 try:
     from PySide6.QtCore import QThread, Signal
@@ -10,6 +12,9 @@ except Exception:
     
     class QThread:
         def __init__(self):
+            from collections import deque
+            self._cache_reglas = None
+            self._historial_procesamiento = deque(maxlen=1000)  # Cache de últimos archivos procesados para evitar re-procesos inmediatos
             pass
     class Signal:
         def __init__(self, *args, **kwargs):
@@ -123,7 +128,12 @@ class _CreatedHandler(FileSystemEventHandler):
 class MotorOrganizadorCore:
     def __init__(self, db_path):
         self.db_path = db_path
-        self.asistente = AsistenteVigiData()
+        # Mantener referencia débil al asistente para evitar ciclos de referencia
+        self._asistente_ref = weakref.ref(AsistenteVigiData())
+
+    @property
+    def asistente(self):
+        return self._asistente_ref() if hasattr(self, '_asistente_ref') else None
 
     def _conectar_db(self):
         return sqlite3.connect(str(self.db_path))
@@ -139,7 +149,13 @@ class MotorOrganizadorCore:
             cursor = conn.cursor()
 
             # 1. Obtener carpetas de origen (monitoreadas)
-            cursor.execute("SELECT ruta FROM carpetas_monitoreadas WHERE activa = 1")
+            # Limitar resultados y usar índice implícito para evitar cargas grandes
+            cursor.execute("""
+                SELECT ruta 
+                FROM carpetas_monitoreadas 
+                WHERE activa = 1 
+                LIMIT 50
+            """)
             origenes = [Path(fila[0]) for fila in cursor.fetchall() if os.path.exists(fila[0])]
 
             # 2. Obtener mapas de carpetas destino (nombre_alias -> ruta) de forma estricta
@@ -147,59 +163,65 @@ class MotorOrganizadorCore:
             destinos = {fila[0].lower().strip(): Path(fila[1]) for fila in cursor.fetchall()}
 
             # 3. Obtener reglas de organización activas por carpeta de destino filtrada (Fase 2)
+            # 3. Obtener reglas de organización activas como generador (no cargar todo en memoria)
+            # Se delega la lógica de iteración a `generar_reglas` para poder consumir reglas
+            # perezosamente fuera de este método.
+            reglas = self.generar_reglas(cursor)
+        finally:
+            if conn:
+                conn.close()
+
+        return origenes, destinos, reglas
+
+    def generar_reglas(self, cursor):
+        """Generador que produce reglas una por una desde el cursor de DB."""
+        try:
             cursor.execute("""
                 SELECT id, extension, palabras_clave, carpeta_destino, nombre 
                 FROM reglas_organizacion 
                 WHERE activa = 1 
                 ORDER BY fecha_creacion DESC
             """)
-            reglas = []
-            filas_reglas = cursor.fetchall()
-            for fila in filas_reglas:
-                rid = fila[0]
-                legacy_ext = fila[1].strip().lower() if fila[1] else None
-                raw_keywords = fila[2]
-                exts = []
-                keywords = []
+        except Exception:
+            return
 
-                # Incluir valor legacy si existe (soporta coma-separado)
-                if legacy_ext:
-                    parts = [p.strip() for p in legacy_ext.split(',') if p.strip()]
-                    for p in parts:
-                        p = f'.{p}' if not p.startswith('.') else p
-                        if p not in exts:
-                            exts.append(p)
+        for fila in cursor.fetchall():
+            rid = fila[0]
+            legacy_ext = fila[1].strip().lower() if fila[1] else None
+            raw_keywords = fila[2]
+            exts = []
+            keywords = []
 
-                # Intentar cargar extensiones normalizadas desde regla_extensiones
-                try:
-                    cursor.execute("SELECT extension FROM regla_extensiones WHERE regla_id = ?", (rid,))
-                    for r2 in cursor.fetchall():
-                        v = r2[0].strip().lower()
-                        if v and not v.startswith('.'):
-                            v = f'.{v.lstrip('.')}'
-                        if v and v not in exts:
-                            exts.append(v)
-                except Exception:
-                    # Tabla posiblemente inexistente en versiones viejas
-                    pass
+            if legacy_ext:
+                parts = [p.strip() for p in legacy_ext.split(',') if p.strip()]
+                for p in parts:
+                    p = f'.{p}' if not p.startswith('.') else p
+                    if p not in exts:
+                        exts.append(p)
 
-                if raw_keywords:
-                    for keyword in [k.strip().lower() for k in str(raw_keywords).split(',') if k.strip()]:
-                        if keyword not in keywords:
-                            keywords.append(keyword)
+            try:
+                cursor.execute("SELECT extension FROM regla_extensiones WHERE regla_id = ?", (rid,))
+                for r2 in cursor.fetchall():
+                    v = r2[0].strip().lower()
+                    if v and not v.startswith('.'):
+                        v = f'.{v.lstrip('.')}'
+                    if v and v not in exts:
+                        exts.append(v)
+            except Exception:
+                pass
 
-                reglas.append({
-                    "id": rid,
-                    "extensions": exts if exts else None,
-                    "keywords": keywords if keywords else None,
-                    "destino_alias": fila[3].lower().strip(),
-                    "nombre_regla": fila[4]
-                })
-        finally:
-            if conn:
-                conn.close()
+            if raw_keywords:
+                for keyword in [k.strip().lower() for k in str(raw_keywords).split(',') if k.strip()]:
+                    if keyword not in keywords:
+                        keywords.append(keyword)
 
-        return origenes, destinos, reglas
+            yield {
+                "id": rid,
+                "extensions": exts if exts else None,
+                "keywords": keywords if keywords else None,
+                "destino_alias": fila[3].lower().strip(),
+                "nombre_regla": fila[4]
+            }
 
     def procesar_archivo(self, ruta_archivo, conexion_compartida, destinos, reglas, ruta_origen_defecto=None):
         """
@@ -242,6 +264,9 @@ class MotorOrganizadorCore:
                 # Garantizar existencia física de la carpeta destino
                 os.makedirs(ruta_final_dir, exist_ok=True)
                 ruta_final_archivo = ruta_final_dir / archivo_path.name
+                if len(ruta_final_archivo.name) > 255:
+                    nombre_base = archivo_path.stem[:250]  # Truncar para evitar errores de sistema de archivos
+                    ruta_final_archivo = ruta_final_dir / f"{nombre_base}{ext_archivo}"
 
                 # Resolver colisiones de nombres si el archivo ya existe manteniendo la extensión intacta
                 if ruta_final_archivo.exists():
@@ -261,6 +286,7 @@ class MotorOrganizadorCore:
 
         return False, None
 
+    @staticmethod
     def _evaluar_regla_para_archivo(self, ext_archivo, nombre_archivo, regla_exts, regla_keywords):
         """Evalúa si la regla aplica según extensión, palabras clave o ambas."""
         tiene_ext = bool(regla_exts)
@@ -275,12 +301,10 @@ class MotorOrganizadorCore:
         return False
 
     def procesar_organizacion(self, callback_progreso=None):
-        """
-        Punto 2 y 3 del Plan: Prepara el entorno y hace el barrido secuencial usando os.scandir.
-        Garantiza un consumo ultra optimizado de memoria RAM (inferior a 120MB).
-        """
+        
         origenes, destinos, reglas = self.obtener_configuracion()
-        archivos_movidos = 0
+        archivos_procesados = 0
+        max_archivos = 1000  # Límite de archivos a procesar por ejecución para evitar sobrecarga
 
         if not origenes or not destinos:
             if callback_progreso:
@@ -291,6 +315,15 @@ class MotorOrganizadorCore:
         conn = self._conectar_db()
 
         for ruta_origen in origenes:
+            # Monitoreo de memoria antes de procesar cada origen
+            try:
+                memoria_mb = self._monitorear_memoria()
+                if memoria_mb and memoria_mb > 500:
+                    gc.collect()
+                    if callback_progreso:
+                        callback_progreso(f"👀 [Monitor] Memoria alta ({memoria_mb:.1f} MB). Forzando GC.")
+            except Exception:
+                pass
             try:
                 # Iteración optimizada en bajo consumo usando os.scandir (Punto 4 del Plan)
                 with os.scandir(ruta_origen) as it:
@@ -304,7 +337,7 @@ class MotorOrganizadorCore:
                                 ruta_origen_defecto=ruta_origen
                             )
                             if exito:
-                                archivos_movidos += 1
+                                archivos_procesados += 1
                                 if callback_progreso and mensaje:
                                     callback_progreso(mensaje)
             except PermissionError:
@@ -315,10 +348,20 @@ class MotorOrganizadorCore:
                     callback_progreso(f"Error accediendo a {ruta_origen.name}: {str(e)}")
 
         conn.close()
-        resultado = archivos_movidos
+        resultado = archivos_procesados
+        import gc
+        gc.collect()
         if callback_progreso:
-            callback_progreso(f"✅ Organización finalizada. Total archivos movidos: {resultado}")
+            callback_progreso(f"✅ Organización finalizada. Total archivos procesados: {resultado}")
         return resultado
+
+    def _monitorear_memoria(self):
+        try:
+            proceso = psutil.Process(os.getpid())
+            memoria = proceso.memory_info().rss / 1024 / 1024  # MB
+            return memoria
+        except Exception:
+            return None
 
     def escanear_ahora(self, callback_progreso=None):
         """

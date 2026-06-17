@@ -7,6 +7,7 @@ from app.utiles.watchdog_handler import WatchdogHandler
 from app.utiles.file_waiter import wait_for_file_ready
 from app.controlador.controlador_asistente import AsistenteVigiData
 from app.core.motor_organizador import MotorOrganizadorCore
+import weakref
 
 
 class WatcherWorker(QObject):
@@ -26,25 +27,32 @@ class WatcherWorker(QObject):
         self._event_queue = Queue()
         self._queued_paths = set()
         self._queue_lock = QMutex()
-        self.handler = WatchdogHandler(
+        handler = WatchdogHandler(
             watch_root=watch_root,
             event_queue=self._event_queue,
             queued_paths=self._queued_paths,
             queue_lock=self._queue_lock,
         )
-        self._worker_thread = WatcherWorkerThread(
-            event_queue=self._event_queue,
-            queued_paths=self._queued_paths,
-            queue_lock=self._queue_lock,
-            parent=self,
-        )
-        self._worker_thread.file_ready.connect(self.file_ready)
-        self._worker_thread.move_result.connect(self.move_result)
-        self._worker_thread.start()
+        self._handler_ref = weakref.ref(handler)
+        
+        self._worker_thread = None
+        self._ensure_worker_thread()
+
+    def _ensure_worker_thread(self):
+        if self._worker_thread is None:
+            self._worker_thread = WatcherWorkerThread(
+                event_queue=self._event_queue,
+                queued_paths=self._queued_paths,
+                queue_lock=self._queue_lock,
+            )
+            self._worker_thread.file_ready.connect(self.file_ready)
+            self._worker_thread.move_result.connect(self.move_result)    
 
     def set_db_path(self, db_path):
         self._db_path = db_path
-        self.handler.set_db_path(db_path)
+        handler = self._handler_ref() if hasattr(self, '_handler_ref') else None
+        if handler:
+            handler.set_db_path(db_path)
         self._worker_thread.set_db_path(db_path)
         if not self._worker_thread.isRunning():
             self._worker_thread.start()
@@ -67,14 +75,13 @@ class WatcherWorkerThread(QThread):
         self._core = None
         self._move_semaphore = QSemaphore(3)
         self._stop_requested = False
-        self._asistente = AsistenteVigiData()
+        import weakref
+        self._asistente_ref = weakref.ref(AsistenteVigiData())
 
 
     def set_db_path(self, db_path):
         self._db_path = db_path
-        if not self._core:
-            self._core = MotorOrganizadorCore(self._db_path)
-        core = self._core
+        self._core = None  
 
 
     def stop(self):
@@ -112,10 +119,9 @@ class WatcherWorkerThread(QThread):
             return
 
         try:
-           if not self._core:
-                self._core = MotorOrganizadorCore(self._db_path)
-            core = self._core
-            origenes, destinos, reglas = core._cargar_configuracion()
+            core = self._core or MotorOrganizadorCore(self._db_path)
+            origenes,destinos,reglas = core.obtener_configuracion()
+            del core
         except Exception:
             self._release_queued_path(path)
             return
@@ -153,13 +159,16 @@ class WatcherWorkerThread(QThread):
             return
 
         try:
-            asist = self._asistente
+            asist = self._asistente_ref() if hasattr(self, '_asistente_ref') else None
             p = Path(path)
             time.sleep(0.2)
             moved = False
             attempts = 3
             for attempt in range(1, attempts + 1):
                 try:
+                    if asist is None:
+                        asist = AsistenteVigiData()
+                        self._asistente_ref = weakref.ref(asist)
                     moved = asist._move_and_register(p, destino_dir, p.parent)
                     if moved:
                         break
@@ -186,20 +195,11 @@ class WatcherWorkerThread(QThread):
                 pass
         finally:
             self._move_semaphore.release()
-            try:
-                if hasattr(self, '_core'):
-                    close = getattr(self._core, 'close', None)
-                    if callable(close):
-                        try:
-                            close()
-                        except Exception:
-                            pass
-                    self._core = None
-            except Exception:
-                pass
-                        self._release_queued_path(path)
-            time.sleep(0.5)
-
+            if hasattr(self._core, 'close'):
+                self._core = None
+            self._release_queued_path(path)
+            time.sleep(0.1)
+                
     def _release_queued_path(self, path: str):
         try:
             with QMutexLocker(self._queue_lock):
