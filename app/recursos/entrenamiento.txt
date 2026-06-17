@@ -1,3 +1,6 @@
+==========================================
+INTENCIÓN: CREAR CARPETAS
+==========================================
 __label__crear crea una carpeta en el escritorio llamada Fotos
 __label__crear crea una nueva carpeta en el escritorio llamada Proyecto
 __label__crear genera un directorio en el escritorio para tareas
@@ -26,7 +29,32 @@ __label__crear crea una carpeta llamada unellez en documentos
 __label__crear genera una carpeta llamada tesis en universidad
 __label__crear haz un directorio llamado codigo en mis proyectos
 __label__crear crea una carpeta llamada respaldo en mi pendrive
+__label__crear ármame una carpeta de reportes en el escritorio
+__label__crear necesito un directorio nuevo que se llame apuntes en documentos
+__label__crear construye una carpeta para finanzas en mis proyectos
+__label__crear añade una carpeta vacía llamada tareas en universidad
+__label__crear quiero una carpeta llamada varios en descargas
 
+==========================================
+INTENCIÓN: CREAR / REGISTRAR DESTINOS RÁPIDOS
+==========================================
+__label__crear crear destino Fotos en C:/Users/usuario/Imágenes
+__label__crear crear destino Destino_Documentos en C:/Users/usuario/Documents
+__label__crear crear destino MisProyectos en C:/Users/usuario/Documents/GitHub
+__label__crear crea destino Respaldos en D:/Respaldos
+__label__crear crear destino Fotos en fotos
+__label__crear crear destino Documentos en documentos
+__label__crear crear destino Proyectos en mis proyectos
+__label__crear crear destino Respaldos en respaldos
+__label__crear crear destino USB en mi pendrive
+__label__crear crear destino FotosFamilia en fotos
+__label__crear configura el destino universidad en documentos
+__label__crear haz un nuevo destino llamado trabajos en mi pendrive
+__label__crear registra el destino peliculas en d:/videos
+
+==========================================
+INTENCIÓN: MOVER ARCHIVOS Y CARPETAS
+==========================================
 __label__mover mueve la carpeta Fotos del escritorio a Documentos
 __label__mover mueve la carpeta Proyecto del escritorio a Documentos
 __label__mover mueve el directorio de escritorio llamado Tareas a Documentos
@@ -61,47 +89,132 @@ __label__mover mueve pdf a universidad
 __label__mover mueve todos los docx a mis proyectos
 __label__mover mueve png a fotos
 __label__mover traspasa los archivos txt a respaldos
+__label__mover pasa todo lo que sea mp4 a videos
+__label__mover reubica la carpeta tesis en mi pendrive
+__label__mover envía los documentos de contabilidad a respaldos
+__label__mover traslada el archivo nomina.xlsx a documentos
+__label__mover llévate los jpg a la carpeta fotos
+__label__mover manda todos los archivos rar a descargas
 
-
-# Ejemplos para crear y registrar destinos (crear destino <alias> en <ruta>)
-__label__crear crear destino Fotos en C:/Users/usuario/Imágenes
-__label__crear crear destino Destino_Documentos en C:/Users/usuario/Documents
-__label__crear crear destino MisProyectos en C:/Users/usuario/Documents/GitHub
-__label__crear crea destino Respaldos en D:/Respaldos
-__label__crear crear destino Fotos en fotos
-__label__crear crear destino Documentos en documentos
-__label__crear crear destino Proyectos en mis proyectos
-__label__crear crear destino Respaldos en respaldos
-__label__crear crear destino USB en mi pendrive
-__label__crear crear destino FotosFamilia en fotos
-
-# Intención: Agregar Carpetas de Origen (Monitoreo)
+==========================================
+INTENCIÓN: AGREGAR ORIGEN (MONITOREO)
+==========================================
 __label__config_origen monitorea la carpeta de descargas
 __label__config_origen añade descargas como origen
 __label__config_origen vigila el escritorio y crea una carpeta llamada recibos
 __label__config_origen pon la carpeta documentos como origen creando la carpeta universidad
 __label__config_origen añade un nuevo origen en descargas con una carpeta para facturas
+__label__config_origen empieza a revisar descargas
+__label__config_origen pon el ojo en el escritorio
+__label__config_origen agrega la ruta de documentos como entrada
+__label__config_origen configura mi pendrive para monitoreo
+__label__config_origen supervisa la carpeta de proyectos
+__label__config_origen quiero que vigiles la carpeta descargas
+__label__config_origen activa el monitoreo en el escritorio
 
-# Intención: Agregar Carpetas de Destino
+==========================================
+INTENCIÓN: AGREGAR DESTINOS DE ORGANIZACIÓN
+==========================================
 __label__config_destino guarda las cosas en la carpeta respaldos
 __label__config_destino añade un nuevo destino llamado organizados en mi escritorio
 __label__config_destino establece la ruta d:/archivos como destino
 __label__config_destino agrega la carpeta fotos como destino de organizacion
+__label__config_destino usa mis proyectos como salida
+__label__config_destino los archivos organizados van a la carpeta universidad
+__label__config_destino registra descargas como lugar de destino
+__label__config_destino crea una ruta de salida hacia d:/respaldos
+__label__config_destino pon el destino tareas en mis documentos
+__label__config_destino el nuevo destino se llama apuntes y está en escritorio
 
-# Intención: Crear Reglas Automáticas (Multi-extensión)
+==========================================
+INTENCIÓN: CREAR REGLAS (EXTENSIONES Y PALABRAS CLAVE)
+==========================================
 __label__config_regla crea una regla para los archivos pdf y docx
 __label__config_regla asigna una regla para las extensiones png y jpg
 __label__config_regla asocia los archivos de tipo zip y rar
 __label__config_regla genera una regla de organizacion para mp4
-__label__estadisticas muéstrame el reporte de hoy.
-__label__configuracion cambia el destino de descargas.
+__label__config_regla crea una regla para los pdf que contengan la palabra factura hacia universidad
+__label__config_regla filtra los archivos con nombre proyecto en formato docx y envíalos a trabajo
+__label__config_regla asigna una regla para jpg que tengan la palabra familia y guárdalos en fotos
+__label__config_regla asocia los archivos zip que digan respaldo hacia la carpeta respaldos
+__label__config_regla genera una regla para todo lo que tenga la palabra clave recibo hacia finanzas
+__label__config_regla manda los txt con la palabra clave resumen a la carpeta documentos
+__label__config_regla mueve cualquier archivo que se llame examen al destino universidad
+__label__config_regla todo lo que sea xlsx mándalo a reportes
+__label__config_regla los archivos que digan pago van para facturas
+__label__config_regla si es un png o un gif guárdalo en la carpeta imagenes
+__label__config_regla quiero una regla para acomodar los mp3 en musica
+__label__config_regla filtra los documentos word que contengan la palabra contrato
+__label__config_regla haz una regla que busque la palabra clave presupuesto y lo mueva a ventas
+
+==========================================
+INTENCIÓN: ELIMINAR ORIGEN
+==========================================
+__label__eliminar_origen deja de vigilar la carpeta descargas
+__label__eliminar_origen elimina el origen escritorio
+__label__eliminar_origen quita descargas de las carpetas monitoreadas
+__label__eliminar_origen no vigiles más la carpeta documentos
+__label__eliminar_origen borra el origen recibos
+__label__eliminar_origen detén el monitoreo en la ruta de descargas
+__label__eliminar_origen ignora la carpeta de mis proyectos
+__label__eliminar_origen saca el pendrive de los orígenes
+__label__eliminar_origen ya no revises la carpeta descargas
+__label__eliminar_origen desactiva la vigilancia en el escritorio
+__label__eliminar_origen elimina la entrada de documentos
+
+==========================================
+INTENCIÓN: ELIMINAR DESTINO
+==========================================
+__label__eliminar_destino borra el destino universidad
+__label__eliminar_destino elimina la carpeta de destino respaldos
+__label__eliminar_destino quita el destino fotos
+__label__eliminar_destino ya no uses el destino proyectos
+__label__eliminar_destino elimina universidad de los destinos
+__label__eliminar_destino suprime la ruta de destino para trabajos
+__label__eliminar_destino borra la salida llamada reportes
+__label__eliminar_destino ya no vamos a usar el destino facturas
+__label__eliminar_destino desvincula la carpeta de destino tareas
+__label__eliminar_destino quita la ruta de salida de mis proyectos
+
+==========================================
+INTENCIÓN: ELIMINAR REGLAS
+==========================================
+__label__eliminar_regla quita la regla para los pdf
+__label__eliminar_regla elimina el filtro de facturas
+__label__eliminar_regla borra la regla de la carpeta universidad
+__label__eliminar_regla suprime la regla de los archivos png
+__label__eliminar_regla elimina la regla de organizacion para mp4
+__label__eliminar_regla deshazte de la regla de proyectos
+__label__eliminar_regla desactiva el filtro de archivos rar
+__label__eliminar_regla borra la condición que mueve los docx
+__label__eliminar_regla elimina la regla de la palabra clave recibo
+__label__eliminar_regla quita esa regla de las fotos de familia
+__label__eliminar_regla suprime el filtro de las extensiones txt
+
+==========================================
+INTENCIÓN: ESTADÍSTICAS
+==========================================
+__label__estadisticas muéstrame el reporte de hoy
+__label__estadisticas dame las estadísticas del día
+__label__estadisticas quiero ver el resumen de hoy
+__label__estadisticas muestra las métricas recientes
+__label__estadisticas enséñame el informe diario
+__label__estadisticas cómo vamos hoy
+__label__estadisticas dime cuántos archivos moviste
+__label__estadisticas dame un balance de lo que has organizado
+__label__estadisticas quiero saber el reporte de actividad
+__label__estadisticas cuántos megas hemos procesado hoy
+
+==========================================
+INTENCIÓN: CONFIGURACIÓN GLOBAL
+==========================================
+__label__configuracion cambia el destino de descargas
 __label__configuracion ajusta la ruta de descargas a respaldos
 __label__configuracion configura descargas en D:/Respaldos
 __label__configuracion establece la carpeta de descargas en Documentos/Backup
 __label__configuracion cambia la carpeta de descargas a mi pendrive
 __label__configuracion modifica el destino de descargas a respaldos
-__label__estadisticas muéstrame el reporte de hoy.
-__label__estadisticas dame las estadísticas del día
-__label__estadisticas quiero ver el resumen de hoy
-__label__estadisticas muestra las métricas recientes
-__label__estadisticas enséñame el informe diario
+__label__configuracion la nueva ruta de descargas es el escritorio
+__label__configuracion cambia el directorio por defecto de descargas
+__label__configuracion actualiza la ruta principal a mis proyectos
+__label__configuracion pon la ruta por defecto en d:/archivos
