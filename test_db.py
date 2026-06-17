@@ -66,7 +66,7 @@ def probar_base_datos():
     
     # 4. Obtener historial
     print("\n4. Obteniendo historial...")
-    historial = db.obtener_historial(limite=10)
+    historial = [dict(h) for h in db.obtener_historial(limite=10)]
     print(f"   ✓ {len(historial)} operaciones en historial")
     for h in historial:
         print(f"      - {h['nombre_archivo']} ({h['tipo_operacion']})")
@@ -90,17 +90,22 @@ def probar_base_datos():
     
     # 7. Probar reglas
     print("\n7. Obteniendo reglas de organización...")
-    reglas = db.obtener_reglas()
+    reglas = [dict(r) for r in db.obtener_reglas()]
     print(f"   ✓ {len(reglas)} reglas cargadas")
     for r in reglas:
-        print(f"      - {r['nombre']}: {r['extension']} → {r['carpeta_destino']}")
+        nombre = r.get('nombre') or f"regla_{r.get('id')}"
+        extension = r.get('extension')
+        carpeta = r.get('carpeta_destino')
+        print(f"      - {nombre}: {extension} → {carpeta}")
     
     # 8. Probar carpetas monitoreadas
     print("\n8. Obteniendo carpetas monitoreadas...")
-    carpetas = db.obtener_carpetas_monitoreadas()
+    carpetas = [dict(c) for c in db.obtener_carpetas_monitoreadas()]
     print(f"   ✓ {len(carpetas)} carpetas monitoreadas")
     for c in carpetas:
-        print(f"      - {c['nombre_alias']}: {c['ruta']}")
+        nombre_alias = c.get('nombre_alias') or c.get('nombre') or ''
+        ruta = c.get('ruta')
+        print(f"      - {nombre_alias}: {ruta}")
     
     # 9. Verificar integridad
     print("\n9. Verificando integridad...")
@@ -109,7 +114,7 @@ def probar_base_datos():
     
     # 10. Probar búsqueda en historial
     print("\n10. Probando búsqueda en historial...")
-    resultados = db.buscar_en_historial("foto")
+    resultados = [dict(r) for r in db.buscar_en_historial("foto")]
     print(f"   ✓ Búsqueda encontrada: {len(resultados)} resultados")
     
     # Cerrar

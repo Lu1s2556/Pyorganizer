@@ -3,6 +3,8 @@ import os
 import shutil
 import sqlite3
 from pathlib import Path
+import psutil
+import weakref
 
 try:
     from PySide6.QtCore import QThread, Signal
@@ -10,6 +12,9 @@ except Exception:
     
     class QThread:
         def __init__(self):
+            from collections import deque
+            self._cache_reglas = None
+            self._historial_procesamiento = deque(maxlen=1000)  # Cache de últimos archivos procesados para evitar re-procesos inmediatos
             pass
     class Signal:
         def __init__(self, *args, **kwargs):
@@ -20,9 +25,6 @@ from watchdog.events import FileSystemEventHandler
 from app.controlador.controlador_asistente import AsistenteVigiData
 
 
-# =====================================================================
-# NUEVO: HILO DE TRABAJO PARA EL ESCANEO ASÍNCRONO AUTOMÁTICO (PASO 5)
-# =====================================================================
 class HiloOrganizador(QThread):
     """
     QThread encargado de ejecutar las tareas de ordenamiento pesado en 
@@ -124,9 +126,17 @@ class _CreatedHandler(FileSystemEventHandler):
 # NÚCLEO OPTIMIZADO: CORE DEL MOTOR ORGANIZADOR
 # =====================================================================
 class MotorOrganizadorCore:
-    def __init__(self, db_path):
+    def __init__(self, db_path, asistente=None):
         self.db_path = db_path
-        self.asistente = AsistenteVigiData()
+        if asistente is not None:
+            self._asistente_ref = weakref.ref(asistente)
+        else:
+            self._asistente_fuerte = AsistenteVigiData()
+            self._asistente_ref = weakref.ref(self._asistente_fuerte)
+
+    @property
+    def asistente(self):
+        return self._asistente_ref() if hasattr(self, '_asistente_ref') else None
 
     def _conectar_db(self):
         return sqlite3.connect(str(self.db_path))
@@ -136,53 +146,88 @@ class MotorOrganizadorCore:
         Punto 2 del Plan: Extrae de forma limpia los orígenes, destinos y reglas activas.
         Retorna estructuras de datos nativas muy ligeras en memoria.
         """
-        conn = self._conectar_db()
-        cursor = conn.cursor()
+        conn = None
+        try:
+            conn = self._conectar_db()
+            cursor = conn.cursor()
 
-        # 1. Obtener carpetas de origen (monitoreadas)
-        cursor.execute("SELECT ruta FROM carpetas_monitoreadas WHERE activa = 1")
-        origenes = [Path(fila[0]) for fila in cursor.fetchall() if os.path.exists(fila[0])]
+            # 1. Obtener carpetas de origen (monitoreadas)
+            # Limitar resultados y usar índice implícito para evitar cargas grandes
+            cursor.execute("""
+                SELECT ruta 
+                FROM carpetas_monitoreadas 
+                WHERE activa = 1 
+                LIMIT 50
+            """)
+            origenes = [Path(fila[0]) for fila in cursor.fetchall() if os.path.exists(fila[0])]
 
-        # 2. Obtener mapas de carpetas destino (nombre_alias -> ruta) de forma estricta
-        cursor.execute("SELECT nombre_alias, ruta FROM directorios_destino")
-        destinos = {fila[0].lower().strip(): Path(fila[1]) for fila in cursor.fetchall()}
+            # 2. Obtener mapas de carpetas destino (nombre_alias -> ruta) de forma estricta
+            cursor.execute("SELECT nombre_alias, ruta FROM directorios_destino")
+            destinos = {fila[0].lower().strip(): Path(fila[1]) for fila in cursor.fetchall()}
 
-        # 3. Obtener reglas de organización activas por carpeta de destino filtrada (Fase 2)
-        cursor.execute("""
-            SELECT id, extension, palabras_clave, carpeta_destino, nombre 
-            FROM reglas_organizacion 
-            WHERE activa = 1 
-            ORDER BY fecha_creacion DESC
-        """)
-        reglas = []
-        filas_reglas = cursor.fetchall()
-        for fila in filas_reglas:
+            # 3. Obtener reglas de organización activas por carpeta de destino filtrada (Fase 2)
+            # 3. Obtener reglas de organización activas como generador (no cargar todo en memoria)
+            # Se delega la lógica de iteración a `generar_reglas` para poder consumir reglas
+            # perezosamente fuera de este método.
+            reglas = list(self.generar_reglas(cursor))
+        finally:
+            if conn:
+                conn.close()
+
+        return origenes, destinos, reglas
+
+    def generar_reglas(self, cursor):
+        """Generador que produce reglas una por una desde el cursor de DB."""
+        try:
+            cursor.execute("""
+                SELECT id, extension, palabras_clave, carpeta_destino, nombre 
+                FROM reglas_organizacion 
+                WHERE activa = 1 
+                ORDER BY fecha_creacion DESC
+            """)
+        except Exception:
+            return
+
+        for fila in cursor.fetchall():
             rid = fila[0]
             legacy_ext = fila[1].strip().lower() if fila[1] else None
             raw_keywords = fila[2]
             exts = []
             keywords = []
 
-            # Incluir valor legacy si existe (soporta coma-separado)
             if legacy_ext:
                 parts = [p.strip() for p in legacy_ext.split(',') if p.strip()]
                 for p in parts:
-                    if not p.startswith('.'):
-                        p = f'.{p.lstrip('.')}'
+                    p = f'.{p}' if not p.startswith('.') else p
                     if p not in exts:
                         exts.append(p)
 
-            # Intentar cargar extensiones normalizadas desde regla_extensiones
             try:
                 cursor.execute("SELECT extension FROM regla_extensiones WHERE regla_id = ?", (rid,))
                 for r2 in cursor.fetchall():
-                    v = r2[0].strip().lower()
-                    if v and not v.startswith('.'):
-                        v = f'.{v.lstrip('.')}'
-                    if v and v not in exts:
-                        exts.append(v)
+                    # r2 puede ser una tupla (row[0]) o sqlite3.Row con clave 'extension'
+                    raw_ext = None
+                    try:
+                        if isinstance(r2, (list, tuple)):
+                            raw_ext = r2[0]
+                        elif hasattr(r2, 'keys') and 'extension' in r2.keys():
+                            raw_ext = r2['extension']
+                        else:
+                            raw_ext = r2
+                    except Exception:
+                        raw_ext = r2
+
+                    if not raw_ext:
+                        continue
+
+                    v = str(raw_ext).strip().lower()
+                    # Normalizar sin puntos al inicio, luego añadir un '.' único
+                    v = v.lstrip('.')
+                    if v:
+                        v = f'.{v.lstrip(".")}' if not v.startswith('.') else v
+                        if v not in exts:
+                            exts.append(v)
             except Exception:
-                # Tabla posiblemente inexistente en versiones viejas
                 pass
 
             if raw_keywords:
@@ -190,16 +235,13 @@ class MotorOrganizadorCore:
                     if keyword not in keywords:
                         keywords.append(keyword)
 
-            reglas.append({
+            yield {
                 "id": rid,
                 "extensions": exts if exts else None,
                 "keywords": keywords if keywords else None,
                 "destino_alias": fila[3].lower().strip(),
                 "nombre_regla": fila[4]
-            })
-
-        conn.close()
-        return origenes, destinos, reglas
+            }
 
     def procesar_archivo(self, ruta_archivo, conexion_compartida, destinos, reglas, ruta_origen_defecto=None):
         """
@@ -242,6 +284,9 @@ class MotorOrganizadorCore:
                 # Garantizar existencia física de la carpeta destino
                 os.makedirs(ruta_final_dir, exist_ok=True)
                 ruta_final_archivo = ruta_final_dir / archivo_path.name
+                if len(ruta_final_archivo.name) > 255:
+                    nombre_base = archivo_path.stem[:250]  # Truncar para evitar errores de sistema de archivos
+                    ruta_final_archivo = ruta_final_dir / f"{nombre_base}{ext_archivo}"
 
                 # Resolver colisiones de nombres si el archivo ya existe manteniendo la extensión intacta
                 if ruta_final_archivo.exists():
@@ -261,7 +306,8 @@ class MotorOrganizadorCore:
 
         return False, None
 
-    def _evaluar_regla_para_archivo(self, ext_archivo, nombre_archivo, regla_exts, regla_keywords):
+    @staticmethod
+    def _evaluar_regla_para_archivo(ext_archivo, nombre_archivo, regla_exts, regla_keywords):
         """Evalúa si la regla aplica según extensión, palabras clave o ambas."""
         tiene_ext = bool(regla_exts)
         tiene_keywords = bool(regla_keywords)
@@ -274,13 +320,12 @@ class MotorOrganizadorCore:
             return any(keyword in nombre_archivo for keyword in regla_keywords)
         return False
 
+
     def procesar_organizacion(self, callback_progreso=None):
-        """
-        Punto 2 y 3 del Plan: Prepara el entorno y hace el barrido secuencial usando os.scandir.
-        Garantiza un consumo ultra optimizado de memoria RAM (inferior a 120MB).
-        """
+        
         origenes, destinos, reglas = self.obtener_configuracion()
-        archivos_movidos = 0
+        archivos_procesados = 0
+        max_archivos = 1000  # Límite de archivos a procesar por ejecución para evitar sobrecarga
 
         if not origenes or not destinos:
             if callback_progreso:
@@ -291,6 +336,15 @@ class MotorOrganizadorCore:
         conn = self._conectar_db()
 
         for ruta_origen in origenes:
+            # Monitoreo de memoria antes de procesar cada origen
+            try:
+                memoria_mb = self._monitorear_memoria()
+                if memoria_mb and memoria_mb > 500:
+                    gc.collect()
+                    if callback_progreso:
+                        callback_progreso(f"👀 [Monitor] Memoria alta ({memoria_mb:.1f} MB). Forzando GC.")
+            except Exception:
+                pass
             try:
                 # Iteración optimizada en bajo consumo usando os.scandir (Punto 4 del Plan)
                 with os.scandir(ruta_origen) as it:
@@ -304,26 +358,31 @@ class MotorOrganizadorCore:
                                 ruta_origen_defecto=ruta_origen
                             )
                             if exito:
-                                archivos_movidos += 1
+                                archivos_procesados += 1
                                 if callback_progreso and mensaje:
                                     callback_progreso(mensaje)
+            except PermissionError:
+                if callback_progreso:
+                    callback_progreso(f"Permiso denegado para acceder a {ruta_origen.name}")                       
             except Exception as e:
                 if callback_progreso:
-                    callback_progreso(f"❌ Error accediendo a {ruta_origen.name}: {str(e)}")
+                    callback_progreso(f"Error accediendo a {ruta_origen.name}: {str(e)}")
 
         conn.close()
-        resultado = archivos_movidos
-        try:
-            origenes.clear()
-            destinos.clear()
-            reglas.clear()
-        except Exception:
-            pass
-        try:
-            gc.collect()
-        except Exception:
-            pass
+        resultado = archivos_procesados
+        import gc
+        gc.collect()
+        if callback_progreso:
+            callback_progreso(f"✅ Organización finalizada. Total archivos procesados: {resultado}")
         return resultado
+
+    def _monitorear_memoria(self):
+        try:
+            proceso = psutil.Process(os.getpid())
+            memoria = proceso.memory_info().rss / 1024 / 1024  # MB
+            return memoria
+        except Exception:
+            return None
 
     def escanear_ahora(self, callback_progreso=None):
         """

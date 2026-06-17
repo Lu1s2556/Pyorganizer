@@ -42,10 +42,16 @@ class BaseDeDatos:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type:
-            self.revertir()
-        self.cerrar_conexion()
-        return False
+        try:
+            if exc_type:
+                self.revertir()
+            self.cerrar_conexion()
+        except Exception:
+            pass
+        finally:
+            self.conexion = None
+            self.cursor = None
+        return False  # No suprimir excepciones        
 
 
 class GestorBaseDatos:
@@ -53,6 +59,43 @@ class GestorBaseDatos:
 
     def __init__(self, db_name="organizador.db"):
         self.db = BaseDeDatos(nombre_db=db_name)
+
+    def migrar_reglas_a_nueva_estructura(self):
+        try:
+            self.db.cursor.execute("SELECT id, extension FROM reglas_organizacion WHERE extension IS NOT NULL AND extension != ''")
+            filas = self.db.cursor.fetchall()
+
+            for fila in filas:
+                regla_id = fila['id']
+                extensiones_str = fila['extension']
+
+                # Verificar si ya existen extensiones en la tabla nueva
+                try:
+                    self.db.cursor.execute("SELECT COUNT(*) as cnt FROM regla_extensiones WHERE regla_id = ?", (regla_id,))
+                    if self.db.cursor.fetchone()['cnt'] > 0:
+                        continue  # Ya migrado
+                except Exception:
+                    # Si la tabla no existe o falla, intentar crearla más arriba o saltar
+                    continue
+
+                # Insertar extensiones en la nueva tabla
+                if extensiones_str:
+                    extensiones = [e.strip() for e in str(extensiones_str).split(',') if e.strip()]
+                    for ext in extensiones:
+                        ext_normalizada = ext if str(ext).startswith('.') else f'.{str(ext).lstrip('.')}'
+                        try:
+                            self.db.cursor.execute(
+                                "INSERT INTO regla_extensiones (regla_id, extension) VALUES (?, ?)",
+                                (regla_id, ext_normalizada)
+                            )
+                        except Exception:
+                            pass
+
+            self.db.confirmar()
+            return True
+        except Exception as e:
+            print(f"Error en migración de reglas: {e}")
+            return False
 
     def crear_tablas(self):
         """Crea todas las tablas del sistema"""
@@ -159,6 +202,7 @@ class GestorBaseDatos:
 
         self.db.confirmar()
         print("✓ Tablas creadas exitosamente")
+        self.migrar_reglas_a_nueva_estructura()
         # Después de crear tablas, sembrar datos por defecto si están vacías
         try:
             # Ejecutar migración para eliminar columna 'prioridad' si existe
@@ -293,24 +337,40 @@ class GestorBaseDatos:
             return False
 
     def obtener_historial(self, limite=50, tipo_operacion=None):
+        # Usar generador para producir filas una por una
         try:
             if tipo_operacion:
-                self.db.cursor.execute("""
+                query = """
                     SELECT * FROM historial_operaciones 
                     WHERE tipo_operacion = ? 
                     ORDER BY fecha_operacion DESC 
                     LIMIT ?
-                """, (tipo_operacion, limite))
+                """
+                params = (tipo_operacion, limite)
             else:
-                self.db.cursor.execute("""
+                query = """
                     SELECT * FROM historial_operaciones 
                     ORDER BY fecha_operacion DESC 
                     LIMIT ?
-                """, (limite,))
-            return self.db.cursor.fetchall()
+                """
+                params = (limite,)
+
+            for row in self.generar_historial(query, params):
+                yield row
         except sqlite3.Error as e:
             self.logar_error("obtener_historial", str(e))
-            return self.db.cursor.fetchall()
+            return
+
+    def generar_historial(self, query, params=()):
+        """Generador que ejecuta la consulta de historial y yieldea filas una por una."""
+        try:
+            cur = self.db.cursor
+            cur.execute(query, params)
+            for row in cur.fetchall():
+                yield row
+        except sqlite3.Error as e:
+            self.logar_error("generar_historial", str(e))
+            return
 
     def buscar_en_historial(self, termino_busqueda):
         try:
@@ -490,9 +550,16 @@ class GestorBaseDatos:
     def obtener_reglas(self, solo_activas=True):
         try:
             if solo_activas:
-                self.db.cursor.execute("SELECT * FROM reglas_organizacion WHERE activa = 1 ORDER BY fecha_creacion DESC")
+                # Seleccionar solo columnas necesarias y limitar para evitar cargas masivas
+                self.db.cursor.execute("""
+                    SELECT id, extension, palabras_clave, carpeta_destino 
+                    FROM reglas_organizacion 
+                    WHERE activa = 1 
+                    ORDER BY fecha_creacion DESC 
+                    LIMIT 100
+                """)
             else:
-                self.db.cursor.execute("SELECT * FROM reglas_organizacion ORDER BY fecha_creacion DESC")
+                self.db.cursor.execute("SELECT id, extension, palabras_clave, carpeta_destino FROM reglas_organizacion ORDER BY fecha_creacion DESC")
             return self.db.cursor.fetchall()
         except sqlite3.Error as e:
             self.logar_error("obtener_reglas_organizacion", str(e))
@@ -526,7 +593,12 @@ class GestorBaseDatos:
             return False
 
     def obtener_carpetas_monitoreadas(self):
-        self.db.cursor.execute("SELECT * FROM carpetas_monitoreadas WHERE activa = 1")
+        # Seleccionar solo columnas necesarias para listado de carpetas monitoreadas
+        self.db.cursor.execute("""
+            SELECT ruta, nombre_alias 
+            FROM carpetas_monitoreadas 
+            WHERE activa = 1
+        """)
         return self.db.cursor.fetchall()
 
     def logar_error(self, tipo_error, mensaje, traceback=None):

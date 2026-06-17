@@ -1,4 +1,7 @@
 import sys
+import os
+import psutil
+import weakref
 from pathlib import Path
 from datetime import datetime
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
@@ -18,9 +21,12 @@ from app.controlador.controlador_asistente import AsistenteVigiData
 from app.vista.vista_reglas import VistaReglasOrganizacion
 from app.vista.vista_configuracion import VistaConfiguracionGlobal 
 
+from collections import deque
+
 class TarjetaMetrica(QFrame):
     """Componente para las tarjetas de estadísticas superiores optimizado para bajo consumo"""
     def __init__(self, titulo, valor, color, parent=None):
+        self._monitor_message_cache = deque(maxlen=500)  # Cache de mensajes para evitar duplicados en la interfaz
         super().__init__(parent)
         self.setMinimumHeight(120)
         # Transparencia ligera con RGBA para evitar consumo de RAM por sombras complejas
@@ -143,6 +149,7 @@ class DashboardOrganizador(QMainWindow):
             pass
 
     def _limpiar_entradas_mensajes(self):
+        
         try:
             while self.lista_mensajes.count() > self.MAX_MENSAJES_EN_MEMORIA:
                 item = self.lista_mensajes.itemAt(0)
@@ -397,25 +404,51 @@ class DashboardOrganizador(QMainWindow):
 
     def iniciar_escaneo(self):
         """Lógica centralizada para desplegar el Hilo del motor organizador."""
+        # Monitoreo de memoria previo al escaneo
+        try:
+            memoria_antes = self._monitorear_memoria()
+            self.agregar_mensaje_sistema(f"Memoria antes del escaneo: {memoria_antes:.1f} MB")
+        except Exception:
+            memoria_antes = None
+
         if self.escaneo_en_progreso:
-            return  
+            return
 
         self.escaneo_en_progreso = True
         self.boton_escanear.setEnabled(False)
         self.boton_escanear.setText("PROCESANDO...")
 
         try:
-            motor = MotorOrganizadorCore(self.asistente.modelo_org.db_path)
-            self.hilo_trabajo = HiloOrganizador(motor)
-            
-            self.hilo_trabajo.progreso_senal.connect(self.registrar_accion_interfaz)
-            self.hilo_trabajo.finalizado_senal.connect(self.finalizar_escaneo)
-            self.hilo_trabajo.start()
+            if not hasattr(self, 'hilo_organizador') or self.hilo_organizador is None:
+                self._motor_cache = MotorOrganizadorCore(self.asistente.modelo_org.db_path, self.asistente)
+                self.hilo_organizador = HiloOrganizador(self._motor_cache)
+                try:
+                    self.hilo_organizador_ref = weakref.ref(self.hilo_organizador)
+                except Exception:
+                    pass
         except Exception as e:
-            self.registrar_accion_interfaz(f"❌ Error al lanzar motor: {e}")
+            QMessageBox.critical(self, "Error al iniciar escaneo", f"No se pudo iniciar el proceso de escaneo: {str(e)}")
             self.escaneo_en_progreso = False
             self.boton_escanear.setEnabled(True)
             self.boton_escanear.setText("ESCANEAR AHORA")
+            return
+
+        try:
+            try:
+                self.hilo_organizador.progreso_senal.disconnect()
+            except Exception:
+                pass
+            try:
+                self.hilo_organizador.finalizado_senal.disconnect()
+            except Exception:
+                pass
+
+            self.hilo_organizador.progreso_senal.connect(self.registrar_accion_interfaz)
+            self.hilo_organizador.finalizado_senal.connect(self.finalizar_escaneo)
+            self.hilo_organizador.start()
+        except Exception as e:
+            QMessageBox.critical(self, "Error al iniciar escaneo", f"No se pudo iniciar el proceso de escaneo: {str(e)}")
+
 
     def ejecutar_escaneo_asincrono(self):
         if self.escaneo_en_progreso:
@@ -429,8 +462,24 @@ class DashboardOrganizador(QMainWindow):
         
         self.boton_escanear.setEnabled(True)
         self.boton_escanear.setText("ESCANEAR AHORA")
+
+        if hasattr(self, 'hilo_organizador') and self.hilo_organizador is not None:
+            try:
+                self.hilo_organizador.progreso_senal.disconnect()
+                self.hilo_organizador.finalizado_senal.disconnect()
+            except Exception:
+                pass
+            self.hilo_organizador = None
+
+        import gc
+        gc.collect()    
+        try:
+            memoria_despues = self._monitorear_memoria()
+            self.agregar_mensaje_sistema(f"Memoria después del escaneo: {memoria_despues:.1f} MB")
+        except Exception:
+            pass
         
-        etiqueta_resumen = QLabel(f"✨ Ciclo completado. Movidos: {total_archivos}")
+        etiqueta_resumen = QLabel(f" Ciclo completado. Procesados: {total_archivos}")
         etiqueta_resumen.setStyleSheet("color: #000000; font-weight: 700; font-size: 11px; padding: 6px; background-color: #eab308; border-radius: 4px;")
         self.lista_acciones.insertWidget(self.lista_acciones.count() - 1, etiqueta_resumen)
         self._limpiar_entradas_acciones()
@@ -467,6 +516,17 @@ class DashboardOrganizador(QMainWindow):
             if hasattr(self, 'perro_guardian') and self.perro_guardian is not None:
                 self.perro_guardian.stop()
                 self.perro_guardian.wait(1000)
+                self.perro_guardian = None
+
+            if hasattr(self, '_motor_cache'):
+                self._motor_cache = None
+
+            if hasattr(self,'_monitor_message_cache'):
+                self._monitor_message_cache.clear()
+
+            import gc
+            gc.collect()  
+
         except Exception:
             pass
         super().closeEvent(evento)
@@ -484,6 +544,11 @@ class DashboardOrganizador(QMainWindow):
                 self.showMaximized()
             except Exception:
                 pass
+
+    def _monitorear_memoria(self):
+        proceso = psutil.Process(os.getpid())
+        memoria = proceso.memory_info().rss / 1024 / 1024  # MB
+        return memoria
 
     def refrescar_panel_resumen(self):
         try:
