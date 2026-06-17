@@ -65,16 +65,17 @@ class WatcherWorkerThread(QThread):
         self._queue_lock = queue_lock
         self._db_path = None
         self._core = None
-        self._move_semaphore = QSemaphore(1)
+        self._move_semaphore = QSemaphore(3)
         self._stop_requested = False
         self._asistente = AsistenteVigiData()
 
+
     def set_db_path(self, db_path):
         self._db_path = db_path
-        try:
+        if not self._core:
             self._core = MotorOrganizadorCore(self._db_path)
-        except Exception:
-            self._core = None
+        core = self._core
+
 
     def stop(self):
         self._stop_requested = True
@@ -99,7 +100,7 @@ class WatcherWorkerThread(QThread):
             return
 
 
-        ready = wait_for_file_ready(path, timeout=300, poll_interval=1.0)
+        ready = wait_for_file_ready(path, timeout=300, poll_interval=2.0)
         if not ready:
             self._release_queued_path(path)
             return
@@ -111,8 +112,10 @@ class WatcherWorkerThread(QThread):
             return
 
         try:
-            core = self._core or MotorOrganizadorCore(self._db_path)
-            _, destinos, reglas = core.obtener_configuracion()
+           if not self._core:
+                self._core = MotorOrganizadorCore(self._db_path)
+            core = self._core
+            origenes, destinos, reglas = core._cargar_configuracion()
         except Exception:
             self._release_queued_path(path)
             return
@@ -194,12 +197,7 @@ class WatcherWorkerThread(QThread):
                     self._core = None
             except Exception:
                 pass
-            try:
-                import gc
-                gc.collect()
-            except Exception:
-                pass
-            self._release_queued_path(path)
+                        self._release_queued_path(path)
             time.sleep(0.5)
 
     def _release_queued_path(self, path: str):

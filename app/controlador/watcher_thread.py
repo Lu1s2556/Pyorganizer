@@ -80,6 +80,9 @@ class WatcherThread(QThread):
 
     def stop(self):
         self._running = False
+        if self._observer:
+            self._observer.stop()
+            self._observer.join()
 
     def restart(self):
         try:

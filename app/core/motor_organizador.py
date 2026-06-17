@@ -20,9 +20,6 @@ from watchdog.events import FileSystemEventHandler
 from app.controlador.controlador_asistente import AsistenteVigiData
 
 
-# =====================================================================
-# NUEVO: HILO DE TRABAJO PARA EL ESCANEO ASÍNCRONO AUTOMÁTICO (PASO 5)
-# =====================================================================
 class HiloOrganizador(QThread):
     """
     QThread encargado de ejecutar las tareas de ordenamiento pesado en 
@@ -136,69 +133,72 @@ class MotorOrganizadorCore:
         Punto 2 del Plan: Extrae de forma limpia los orígenes, destinos y reglas activas.
         Retorna estructuras de datos nativas muy ligeras en memoria.
         """
-        conn = self._conectar_db()
-        cursor = conn.cursor()
+        conn = None
+        try:
+            conn = self._conectar_db()
+            cursor = conn.cursor()
 
-        # 1. Obtener carpetas de origen (monitoreadas)
-        cursor.execute("SELECT ruta FROM carpetas_monitoreadas WHERE activa = 1")
-        origenes = [Path(fila[0]) for fila in cursor.fetchall() if os.path.exists(fila[0])]
+            # 1. Obtener carpetas de origen (monitoreadas)
+            cursor.execute("SELECT ruta FROM carpetas_monitoreadas WHERE activa = 1")
+            origenes = [Path(fila[0]) for fila in cursor.fetchall() if os.path.exists(fila[0])]
 
-        # 2. Obtener mapas de carpetas destino (nombre_alias -> ruta) de forma estricta
-        cursor.execute("SELECT nombre_alias, ruta FROM directorios_destino")
-        destinos = {fila[0].lower().strip(): Path(fila[1]) for fila in cursor.fetchall()}
+            # 2. Obtener mapas de carpetas destino (nombre_alias -> ruta) de forma estricta
+            cursor.execute("SELECT nombre_alias, ruta FROM directorios_destino")
+            destinos = {fila[0].lower().strip(): Path(fila[1]) for fila in cursor.fetchall()}
 
-        # 3. Obtener reglas de organización activas por carpeta de destino filtrada (Fase 2)
-        cursor.execute("""
-            SELECT id, extension, palabras_clave, carpeta_destino, nombre 
-            FROM reglas_organizacion 
-            WHERE activa = 1 
-            ORDER BY fecha_creacion DESC
-        """)
-        reglas = []
-        filas_reglas = cursor.fetchall()
-        for fila in filas_reglas:
-            rid = fila[0]
-            legacy_ext = fila[1].strip().lower() if fila[1] else None
-            raw_keywords = fila[2]
-            exts = []
-            keywords = []
+            # 3. Obtener reglas de organización activas por carpeta de destino filtrada (Fase 2)
+            cursor.execute("""
+                SELECT id, extension, palabras_clave, carpeta_destino, nombre 
+                FROM reglas_organizacion 
+                WHERE activa = 1 
+                ORDER BY fecha_creacion DESC
+            """)
+            reglas = []
+            filas_reglas = cursor.fetchall()
+            for fila in filas_reglas:
+                rid = fila[0]
+                legacy_ext = fila[1].strip().lower() if fila[1] else None
+                raw_keywords = fila[2]
+                exts = []
+                keywords = []
 
-            # Incluir valor legacy si existe (soporta coma-separado)
-            if legacy_ext:
-                parts = [p.strip() for p in legacy_ext.split(',') if p.strip()]
-                for p in parts:
-                    if not p.startswith('.'):
-                        p = f'.{p.lstrip('.')}'
-                    if p not in exts:
-                        exts.append(p)
+                # Incluir valor legacy si existe (soporta coma-separado)
+                if legacy_ext:
+                    parts = [p.strip() for p in legacy_ext.split(',') if p.strip()]
+                    for p in parts:
+                        p = f'.{p}' if not p.startswith('.') else p
+                        if p not in exts:
+                            exts.append(p)
 
-            # Intentar cargar extensiones normalizadas desde regla_extensiones
-            try:
-                cursor.execute("SELECT extension FROM regla_extensiones WHERE regla_id = ?", (rid,))
-                for r2 in cursor.fetchall():
-                    v = r2[0].strip().lower()
-                    if v and not v.startswith('.'):
-                        v = f'.{v.lstrip('.')}'
-                    if v and v not in exts:
-                        exts.append(v)
-            except Exception:
-                # Tabla posiblemente inexistente en versiones viejas
-                pass
+                # Intentar cargar extensiones normalizadas desde regla_extensiones
+                try:
+                    cursor.execute("SELECT extension FROM regla_extensiones WHERE regla_id = ?", (rid,))
+                    for r2 in cursor.fetchall():
+                        v = r2[0].strip().lower()
+                        if v and not v.startswith('.'):
+                            v = f'.{v.lstrip('.')}'
+                        if v and v not in exts:
+                            exts.append(v)
+                except Exception:
+                    # Tabla posiblemente inexistente en versiones viejas
+                    pass
 
-            if raw_keywords:
-                for keyword in [k.strip().lower() for k in str(raw_keywords).split(',') if k.strip()]:
-                    if keyword not in keywords:
-                        keywords.append(keyword)
+                if raw_keywords:
+                    for keyword in [k.strip().lower() for k in str(raw_keywords).split(',') if k.strip()]:
+                        if keyword not in keywords:
+                            keywords.append(keyword)
 
-            reglas.append({
-                "id": rid,
-                "extensions": exts if exts else None,
-                "keywords": keywords if keywords else None,
-                "destino_alias": fila[3].lower().strip(),
-                "nombre_regla": fila[4]
-            })
+                reglas.append({
+                    "id": rid,
+                    "extensions": exts if exts else None,
+                    "keywords": keywords if keywords else None,
+                    "destino_alias": fila[3].lower().strip(),
+                    "nombre_regla": fila[4]
+                })
+        finally:
+            if conn:
+                conn.close()
 
-        conn.close()
         return origenes, destinos, reglas
 
     def procesar_archivo(self, ruta_archivo, conexion_compartida, destinos, reglas, ruta_origen_defecto=None):
@@ -307,22 +307,17 @@ class MotorOrganizadorCore:
                                 archivos_movidos += 1
                                 if callback_progreso and mensaje:
                                     callback_progreso(mensaje)
+            except PermissionError:
+                if callback_progreso:
+                    callback_progreso(f"Permiso denegado para acceder a {ruta_origen.name}")                       
             except Exception as e:
                 if callback_progreso:
-                    callback_progreso(f"❌ Error accediendo a {ruta_origen.name}: {str(e)}")
+                    callback_progreso(f"Error accediendo a {ruta_origen.name}: {str(e)}")
 
         conn.close()
         resultado = archivos_movidos
-        try:
-            origenes.clear()
-            destinos.clear()
-            reglas.clear()
-        except Exception:
-            pass
-        try:
-            gc.collect()
-        except Exception:
-            pass
+        if callback_progreso:
+            callback_progreso(f"✅ Organización finalizada. Total archivos movidos: {resultado}")
         return resultado
 
     def escanear_ahora(self, callback_progreso=None):
