@@ -407,7 +407,6 @@ class DashboardOrganizador(QMainWindow):
         # Monitoreo de memoria previo al escaneo
         try:
             memoria_antes = self._monitorear_memoria()
-            self.agregar_mensaje_sistema(f"Memoria antes del escaneo: {memoria_antes:.1f} MB")
         except Exception:
             memoria_antes = None
 
@@ -475,7 +474,6 @@ class DashboardOrganizador(QMainWindow):
         gc.collect()    
         try:
             memoria_despues = self._monitorear_memoria()
-            self.agregar_mensaje_sistema(f"Memoria después del escaneo: {memoria_despues:.1f} MB")
         except Exception:
             pass
         
@@ -784,26 +782,22 @@ class DashboardOrganizador(QMainWindow):
         self.enviar_comando()
 
     def mostrar_ayuda(self):
-        try:
-            claves_alias = list(self.asistente.rutas_atajo.keys())
-        except Exception:
-            claves_alias = ['escritorio', 'documentos', 'descargas']
-
         ejemplos = [
-            f"Mueve <b>archivos</b> a <b>{claves_alias[1]}</b>",
-            f"Crea una carpeta llamada <b>fotos</b> en <b>{claves_alias[0]}</b>",
-            f"Mueve <b>pdf</b> a <b>{claves_alias[2]}</b>",
-            "Agregar regla (comando directo): <b>asignar .pdf a Destino_Documentos</b>",
-            "Listar: <b>listar reglas</b> | <b>mostrar destinos</b>",
+            "📂 <b>Carpetas:</b> 'crea una carpeta llamada tesis en universidad'",
+            "📍 <b>Orígenes:</b> 'añade descargas como origen' o 'vigila el escritorio'",
+            "🎯 <b>Destinos:</b> 'registra universidad en documentos'",
+            "⚙️ <b>Reglas:</b> 'crea una regla para pdf' o 'xlsx mándalo a reportes'",
+            "🧹 <b>Mover:</b> 'mueve los docx a mis proyectos'",
+            "🗑️ <b>Eliminar:</b> 'elimina la regla pdf', 'deja de vigilar descargas'",
+            "📊 <b>Estadísticas:</b> 'dame las estadísticas del día'",
+            "📋 <b>Listados:</b> 'listar reglas', 'mostrar destinos', 'mostrar origenes'"
         ]
-        html_alias = ''.join(f"<li>{a}</li>" for a in claves_alias[:6])
 
-        html_ayuda = f"<div style='color:#e4e4e7; font-size:12px; line-height:1.5;'>"
-        html_ayuda += "<b style='color:#eab308;'>Comandos útiles</b><ul>"
+        html_ayuda = f"<div style='color:#e4e4e7; font-size:15px; line-height:1.6; padding-right:10px;'>"
+        html_ayuda += "<b style='color:#eab308; font-size:16px;'>Comandos Principales:</b><br><br>"
         for ej in ejemplos:
-            html_ayuda += f"<li>{ej}</li>"
-        html_ayuda += "</ul>"
-        html_ayuda += "<b style='color:#eab308;'>Alias reconocidos</b><ul>" + html_alias + "</ul></div>"
+            html_ayuda += f"<div style='margin-bottom:8px;'>{ej}</div>"
+        html_ayuda += "</div>"
 
         etiqueta_ayuda = QLabel(html_ayuda)
         etiqueta_ayuda.setStyleSheet("background-color: rgba(39, 39, 42, 0.8); padding: 12px; border-radius: 6px; border-left: 3px solid #eab308;")
