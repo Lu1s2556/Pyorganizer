@@ -126,10 +126,13 @@ class _CreatedHandler(FileSystemEventHandler):
 # NÚCLEO OPTIMIZADO: CORE DEL MOTOR ORGANIZADOR
 # =====================================================================
 class MotorOrganizadorCore:
-    def __init__(self, db_path):
+    def __init__(self, db_path, asistente=None):
         self.db_path = db_path
-        # Mantener referencia débil al asistente para evitar ciclos de referencia
-        self._asistente_ref = weakref.ref(AsistenteVigiData())
+        if asistente is not None:
+            self._asistente_ref = weakref.ref(asistente)
+        else:
+            self._asistente_fuerte = AsistenteVigiData()
+            self._asistente_ref = weakref.ref(self._asistente_fuerte)
 
     @property
     def asistente(self):
@@ -166,7 +169,7 @@ class MotorOrganizadorCore:
             # 3. Obtener reglas de organización activas como generador (no cargar todo en memoria)
             # Se delega la lógica de iteración a `generar_reglas` para poder consumir reglas
             # perezosamente fuera de este método.
-            reglas = self.generar_reglas(cursor)
+            reglas = list(self.generar_reglas(cursor))
         finally:
             if conn:
                 conn.close()
@@ -202,11 +205,28 @@ class MotorOrganizadorCore:
             try:
                 cursor.execute("SELECT extension FROM regla_extensiones WHERE regla_id = ?", (rid,))
                 for r2 in cursor.fetchall():
-                    v = r2[0].strip().lower()
-                    if v and not v.startswith('.'):
-                        v = f'.{v.lstrip('.')}'
-                    if v and v not in exts:
-                        exts.append(v)
+                    # r2 puede ser una tupla (row[0]) o sqlite3.Row con clave 'extension'
+                    raw_ext = None
+                    try:
+                        if isinstance(r2, (list, tuple)):
+                            raw_ext = r2[0]
+                        elif hasattr(r2, 'keys') and 'extension' in r2.keys():
+                            raw_ext = r2['extension']
+                        else:
+                            raw_ext = r2
+                    except Exception:
+                        raw_ext = r2
+
+                    if not raw_ext:
+                        continue
+
+                    v = str(raw_ext).strip().lower()
+                    # Normalizar sin puntos al inicio, luego añadir un '.' único
+                    v = v.lstrip('.')
+                    if v:
+                        v = f'.{v.lstrip(".")}' if not v.startswith('.') else v
+                        if v not in exts:
+                            exts.append(v)
             except Exception:
                 pass
 
@@ -287,7 +307,7 @@ class MotorOrganizadorCore:
         return False, None
 
     @staticmethod
-    def _evaluar_regla_para_archivo(self, ext_archivo, nombre_archivo, regla_exts, regla_keywords):
+    def _evaluar_regla_para_archivo(ext_archivo, nombre_archivo, regla_exts, regla_keywords):
         """Evalúa si la regla aplica según extensión, palabras clave o ambas."""
         tiene_ext = bool(regla_exts)
         tiene_keywords = bool(regla_keywords)
@@ -299,6 +319,7 @@ class MotorOrganizadorCore:
         if tiene_keywords:
             return any(keyword in nombre_archivo for keyword in regla_keywords)
         return False
+
 
     def procesar_organizacion(self, callback_progreso=None):
         

@@ -420,7 +420,7 @@ class DashboardOrganizador(QMainWindow):
 
         try:
             if not hasattr(self, 'hilo_organizador') or self.hilo_organizador is None:
-                self._motor_cache = MotorOrganizadorCore(self.asistente.modelo_org.db_path)
+                self._motor_cache = MotorOrganizadorCore(self.asistente.modelo_org.db_path, self.asistente)
                 self.hilo_organizador = HiloOrganizador(self._motor_cache)
                 try:
                     self.hilo_organizador_ref = weakref.ref(self.hilo_organizador)

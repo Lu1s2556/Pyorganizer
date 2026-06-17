@@ -524,6 +524,7 @@ class VistaReglasOrganizacion(QWidget):
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 nombre TEXT NOT NULL,
                 extension TEXT,
+                palabras_clave TEXT,
                 carpeta_destino TEXT NOT NULL,
                 activa BOOLEAN DEFAULT 1,
                 fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -644,10 +645,10 @@ class VistaReglasOrganizacion(QWidget):
 
         if ext_raw != "*":
             lista_ext = [e.strip().lstrip('.').lower() for e in ext_raw.split(',') if e.strip()]
+            # Guardar en tabla separada para compatibilidad con nueva estructura
             ext_serializada = ",".join(lista_ext)
         else:
-            ext_serializada = None 
-
+            ext_serializada = None
         palabras_serializadas = None
         if palabras_raw:
             palabras_serializadas = ",".join([p.strip().lower() for p in palabras_raw.split(',') if p.strip()])

@@ -60,6 +60,43 @@ class GestorBaseDatos:
     def __init__(self, db_name="organizador.db"):
         self.db = BaseDeDatos(nombre_db=db_name)
 
+    def migrar_reglas_a_nueva_estructura(self):
+        try:
+            self.db.cursor.execute("SELECT id, extension FROM reglas_organizacion WHERE extension IS NOT NULL AND extension != ''")
+            filas = self.db.cursor.fetchall()
+
+            for fila in filas:
+                regla_id = fila['id']
+                extensiones_str = fila['extension']
+
+                # Verificar si ya existen extensiones en la tabla nueva
+                try:
+                    self.db.cursor.execute("SELECT COUNT(*) as cnt FROM regla_extensiones WHERE regla_id = ?", (regla_id,))
+                    if self.db.cursor.fetchone()['cnt'] > 0:
+                        continue  # Ya migrado
+                except Exception:
+                    # Si la tabla no existe o falla, intentar crearla más arriba o saltar
+                    continue
+
+                # Insertar extensiones en la nueva tabla
+                if extensiones_str:
+                    extensiones = [e.strip() for e in str(extensiones_str).split(',') if e.strip()]
+                    for ext in extensiones:
+                        ext_normalizada = ext if str(ext).startswith('.') else f'.{str(ext).lstrip('.')}'
+                        try:
+                            self.db.cursor.execute(
+                                "INSERT INTO regla_extensiones (regla_id, extension) VALUES (?, ?)",
+                                (regla_id, ext_normalizada)
+                            )
+                        except Exception:
+                            pass
+
+            self.db.confirmar()
+            return True
+        except Exception as e:
+            print(f"Error en migración de reglas: {e}")
+            return False
+
     def crear_tablas(self):
         """Crea todas las tablas del sistema"""
 
@@ -165,6 +202,7 @@ class GestorBaseDatos:
 
         self.db.confirmar()
         print("✓ Tablas creadas exitosamente")
+        self.migrar_reglas_a_nueva_estructura()
         # Después de crear tablas, sembrar datos por defecto si están vacías
         try:
             # Ejecutar migración para eliminar columna 'prioridad' si existe
