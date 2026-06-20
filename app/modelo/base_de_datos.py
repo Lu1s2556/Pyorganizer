@@ -493,23 +493,23 @@ class GestorBaseDatos:
         # Commit final por si dejó operaciones pendientes
         self.db.confirmar()
 
-    def agregar_regla(self, nombre, extension, carpeta_destino, activa=True):
+    def agregar_regla(self, nombre, extension, carpeta_destino, activa=True, palabras_clave=None):
         try:
             self.db.cursor.execute("""
-                INSERT INTO reglas_organizacion (nombre, extension, carpeta_destino, activa) 
-                VALUES (?, ?, ?, ?)
-            """, (nombre, extension, carpeta_destino, int(activa)))
+                INSERT INTO reglas_organizacion (nombre, extension, palabras_clave, carpeta_destino, activa) 
+                VALUES (?, ?, ?, ?, ?)
+            """, (nombre, extension, palabras_clave, carpeta_destino, int(activa)))
             self.db.confirmar()
             return True
         except sqlite3.Error as e:
             self.logar_error("agregar_regla_organizacion", str(e))
             return False
 
-    def eliminar_regla(self, extension):
+    def eliminar_regla(self, ext_o_clave):
         try:
-            self.db.cursor.execute("DELETE FROM reglas_organizacion WHERE extension = ?", (extension,))
+            self.db.cursor.execute("DELETE FROM reglas_organizacion WHERE extension = ? OR palabras_clave = ?", (ext_o_clave, ext_o_clave))
             self.db.confirmar()
-            return True
+            return self.db.cursor.rowcount > 0
         except sqlite3.Error as e:
             self.logar_error("eliminar_regla", str(e))
             return False
@@ -590,6 +590,15 @@ class GestorBaseDatos:
             return True
         except sqlite3.Error as e:
             self.logar_error("eliminar_carpetas_monitoreadas", str(e))
+            return False
+
+    def eliminar_carpeta_monitoreada_por_alias(self, alias_or_ruta):
+        try:
+            self.db.cursor.execute("DELETE FROM carpetas_monitoreadas WHERE nombre_alias = ? OR ruta = ?", (alias_or_ruta, alias_or_ruta))
+            self.db.confirmar()
+            return self.db.cursor.rowcount > 0
+        except sqlite3.Error as e:
+            self.logar_error("eliminar_carpeta_monitoreada_por_alias", str(e))
             return False
 
     def obtener_carpetas_monitoreadas(self):

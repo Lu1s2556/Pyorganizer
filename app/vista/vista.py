@@ -128,7 +128,7 @@ class DashboardOrganizador(QMainWindow):
 
     def agregar_mensaje_sistema(self, texto):
         etiqueta = QLabel(f"<b>Sistema:</b> {texto}")
-        etiqueta.setStyleSheet("color: #e4e4e7; background-color: rgba(39, 39, 42, 0.8); padding: 10px; border-radius: 6px;")
+        etiqueta.setStyleSheet("color: #e4e4e7; background-color: rgba(39, 39, 42, 0.8); padding: 12px; border-radius: 8px; font-size: 16px;")
         etiqueta.setWordWrap(True)
         self.lista_mensajes.insertWidget(self.lista_mensajes.count()-1, etiqueta)
         self._limpiar_entradas_mensajes()
@@ -745,7 +745,7 @@ class DashboardOrganizador(QMainWindow):
         respuesta = self.asistente.procesar_peticion(texto)
         
         etiqueta_usuario = QLabel(f"<b>Tú:</b> {texto}")
-        etiqueta_usuario.setStyleSheet("color: #a3a3a3; font-size: 12px; padding: 5px;")
+        etiqueta_usuario.setStyleSheet("color: #a3a3a3; font-size: 16px; padding: 6px;")
         self.lista_mensajes.insertWidget(self.lista_mensajes.count()-1, etiqueta_usuario)
 
         if isinstance(respuesta, dict) and 'suggestions' in respuesta:
@@ -783,10 +783,10 @@ class DashboardOrganizador(QMainWindow):
 
     def mostrar_ayuda(self):
         ejemplos = [
-            "📂 <b>Carpetas:</b> 'crea una carpeta llamada tesis en universidad'",
-            "📍 <b>Orígenes:</b> 'añade descargas como origen' o 'vigila el escritorio'",
+            "📂 <b>Carpetas:</b> 'crea una carpeta llamada tesis en *carpeta raiz* '",
+            "📍 <b>Orígenes:</b> 'vigila el escritorio y crea una carpeta 'nombre de carpeta'",
             "🎯 <b>Destinos:</b> 'registra universidad en documentos'",
-            "⚙️ <b>Reglas:</b> 'crea una regla para pdf' o 'xlsx mándalo a reportes'",
+            "⚙️ <b>Reglas:</b> 'los archivos pdf que digan 'palabra clave' van para 'carpeta destino'",
             "🧹 <b>Mover:</b> 'mueve los docx a mis proyectos'",
             "🗑️ <b>Eliminar:</b> 'elimina la regla pdf', 'deja de vigilar descargas'",
             "📊 <b>Estadísticas:</b> 'dame las estadísticas del día'",
@@ -804,7 +804,7 @@ class DashboardOrganizador(QMainWindow):
         etiqueta_ayuda.setTextFormat(Qt.RichText)
         
         etiqueta_cmd = QLabel(f"<b>Tú:</b> /ayuda")
-        etiqueta_cmd.setStyleSheet("color: #a3a3a3; font-size: 12px; padding: 5px;")
+        etiqueta_cmd.setStyleSheet("color: #a3a3a3; font-size: 16px; padding: 6px;")
         
         self.lista_mensajes.insertWidget(self.lista_mensajes.count()-1, etiqueta_cmd)
         self.lista_mensajes.insertWidget(self.lista_mensajes.count()-1, etiqueta_ayuda)

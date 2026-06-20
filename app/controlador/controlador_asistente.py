@@ -197,22 +197,100 @@ class AsistenteVigiData:
             return f"❌ Error registrando destino en BD: {e}"
 
     def _ia_configurar_regla(self, texto: str) -> str:
-        # Captura extensiones en la frase
+        # Extraer palabras clave
+        m_clave = re.search(r'(?:palabra(?: clave)?|que digan?|nombre|se llame)\s+([\w\d_-]+)', texto, re.IGNORECASE)
+        palabra_clave = m_clave.group(1).strip() if m_clave else None
+
+        # Captura extensiones
         patron_ext = r"\b\.?([a-zA-Z0-9]{2,5})\b"
         extensiones_detectadas = re.findall(patron_ext, texto)
-        palabras_bloqueadas = set(["para", "crea", "una", "tipo", "con", "los", "las", "por", "regla", "archivos"]) 
+        palabras_bloqueadas = set(["para", "crea", "una", "tipo", "con", "los", "las", "por", "regla", "archivos", "que", "hacia", "mueve", "todo", "lo", "sea", "contenga", "palabra", "clave", "destino"]) 
         extensiones_limpias = [e.lower().lstrip('.') for e in extensiones_detectadas if e.lower() not in palabras_bloqueadas]
-        # Deduplicar conservando orden
+        if palabra_clave and palabra_clave in extensiones_limpias:
+            extensiones_limpias.remove(palabra_clave)
+            
+        # Detectar destino
+        destino = None
+        for atajo in self.rutas_atajo.keys():
+            if re.search(rf'\b{atajo}\b', texto, re.IGNORECASE):
+                destino = atajo
+                break
+        
+        if not destino:
+            m_dest = re.search(r'(?:hacia|en|a|guárdalos en|guárdalo en|mándalo a|van para|mueva a|envíalos a|al destino|al)\s+(?:la carpeta\s+|el destino\s+)?([\w\d_-]+)', texto, re.IGNORECASE)
+            if m_dest:
+                destino = m_dest.group(1).strip()
+
         seen = set(); extensiones_unicas = []
         for e in extensiones_limpias:
-            if e not in seen and len(e) >= 2:
+            if e not in seen and len(e) >= 2 and (not destino or e.lower() != destino.lower()):
                 seen.add(e); extensiones_unicas.append(e)
 
-        if not extensiones_unicas:
-            return "🔍 No logré identificar las extensiones en tu frase. Di por ejemplo: 'regla para pdf y docx'."
+        if not extensiones_unicas and not palabra_clave:
+            return "🔍 No logré identificar extensiones ni palabras clave. Di: 'regla para pdf que diga factura hacia documentos'."
 
-        cadena_extensiones = ",".join(extensiones_unicas)
-        return f"📝 He preparado una regla multi-extensión para: [{cadena_extensiones}]. ¿A qué carpeta de destino deseas vincularla?"
+        if not destino:
+            return "🔍 Debes especificar la carpeta de destino en el mismo comando. Por ejemplo: 'regla para pdf hacia universidad'."
+
+        ext = extensiones_unicas[0] if extensiones_unicas else ""
+        nombre_regla = f"Regla_{destino}_{ext or palabra_clave}"
+
+        # Resolver el alias del destino al valor que usa vista_reglas (nombre_alias)
+        # vista_reglas filtra por carpeta_destino == nombre_alias de directorios_destino
+        alias_final = destino
+        ruta_final = None
+        try:
+            if getattr(self.modelo_org, 'gestor', None):
+                filas_destino = self.modelo_org.gestor.obtener_directorios_destino()
+                for fila in filas_destino:
+                    # fila puede ser un sqlite3.Row: ruta, nombre_alias
+                    try:
+                        alias_db = str(fila['nombre_alias'] or '').lower().strip()
+                        ruta_db = str(fila['ruta'] or '').strip()
+                    except (TypeError, KeyError):
+                        try:
+                            alias_db = str(fila[1] or '').lower().strip()
+                            ruta_db = str(fila[0] or '').strip()
+                        except Exception:
+                            continue
+                    if alias_db == destino.lower().strip():
+                        alias_final = fila['nombre_alias'] if hasattr(fila, 'keys') else fila[1]
+                        ruta_final = ruta_db
+                        break
+        except Exception:
+            pass
+
+        # Si no encontró en BD, buscar en rutas_atajo y registrar el destino automáticamente
+        if not ruta_final and destino.lower() in self.rutas_atajo:
+            ruta_fisica = self.rutas_atajo[destino.lower()]
+            alias_final = destino.capitalize()
+            try:
+                Path(ruta_fisica).mkdir(parents=True, exist_ok=True)
+                if getattr(self.modelo_org, 'gestor', None):
+                    self.modelo_org.gestor.agregar_directorio_destino(ruta_fisica, alias_final)
+            except Exception:
+                pass
+            ruta_final = ruta_fisica
+
+        if not ruta_final:
+            return f"🔍 No encontré el destino '{destino}'. Agrégalo primero con: 'agrega destino {destino} en documentos'."
+        
+        try:
+            ok = False
+            if getattr(self.modelo_org, 'gestor', None):
+                ok = self.modelo_org.gestor.agregar_regla(nombre_regla, ext, alias_final, True, palabra_clave)
+            if ok:
+                try:
+                    self.actualizar_reglas_en_memoria()
+                    app_signals.stats_changed.emit()
+                except Exception:
+                    pass
+                cond_msg = f"ext: {ext}" if ext else f"clave: '{palabra_clave}'"
+                if ext and palabra_clave: cond_msg = f"ext: {ext} y clave: '{palabra_clave}'"
+                return f"✅ Regla creada: {cond_msg} → {alias_final}"
+            return f"❌ Falló al añadir la regla para {ext or palabra_clave}. ¿El destino '{alias_final}' está registrado?"
+        except Exception as e:
+            return f"❌ Error al crear regla: {e}"
 
 
     def procesar_peticion(self, texto):
@@ -428,29 +506,71 @@ class AsistenteVigiData:
             except Exception as e:
                 return f"❌ Error al crear regla: {e}"
 
-        # Eliminar regla: 'eliminar regla .pdf'
-        m_elim = re.search(r'(?:eliminar|quitar)\s+regla\s+\.?([A-Za-z0-9]+)', texto, re.IGNORECASE)
-        if m_elim:
-            ext = m_elim.group(1).strip().lower()
-            if not ext.startswith('.'):
-                ext = f'.{ext}'
-            try:
-                ok = False
-                if getattr(self.modelo_org, 'gestor', None):
-                    ok = self.modelo_org.gestor.eliminar_regla(ext)
-                if ok:
-                    try:
-                        self.actualizar_reglas_en_memoria()
-                    except Exception:
-                        pass
-                    try:
-                        app_signals.stats_changed.emit()
-                    except Exception:
-                        pass
-                    return f"✅ Regla eliminada: {ext}"
-                return f"❌ No se encontró o no fue posible eliminar la regla {ext}."
-            except Exception as e:
-                return f"❌ Error al eliminar regla: {e}"
+        # INTENCIÓN: ELIMINAR ORIGEN, DESTINO O REGLA
+        if etiqueta == "eliminar_origen":
+            m = re.search(r'(?:elimina|borra|quita|deja de vigilar|ignora|desactiva(?:.*en)?|saca|ya no revises)\s+(?:el origen|la carpeta(?: de)?|la entrada de)?\s*([\w\d_-\s]+)', texto, re.IGNORECASE)
+            if m:
+                alias = m.group(1).strip().lower()
+                alias = re.sub(r'^(el|la|los|las)\s+', '', alias).strip()
+                try:
+                    ok = False
+                    if getattr(self.modelo_org, 'gestor', None):
+                        ok = self.modelo_org.gestor.eliminar_carpeta_monitoreada_por_alias(alias)
+                    if ok:
+                        try:
+                            app_signals.stats_changed.emit()
+                        except: pass
+                        return f"✅ Origen eliminado: {alias}"
+                    return f"❌ No se encontró el origen '{alias}'."
+                except Exception as e:
+                    return f"❌ Error: {e}"
+            return "🔍 Indica qué origen eliminar. Ej: 'elimina el origen descargas'"
+
+        if etiqueta == "eliminar_destino":
+            m = re.search(r'(?:elimina|borra|quita|desvincula|suprime|ya no uses|ya no vamos a usar)\s+(?:el destino|la carpeta(?: de destino)?|la ruta(?: de salida(?: de)?)?|la salida llamada)?\s*([\w\d_-\s]+)', texto, re.IGNORECASE)
+            if m:
+                alias = m.group(1).strip().lower()
+                alias = re.sub(r'^(el|la|los|las)\s+', '', alias).strip()
+                try:
+                    ok = False
+                    if getattr(self.modelo_org, 'gestor', None):
+                        ok = self.modelo_org.gestor.eliminar_directorio_destino(alias)
+                    if ok:
+                        try:
+                            app_signals.stats_changed.emit()
+                        except: pass
+                        return f"✅ Destino eliminado: {alias}"
+                    return f"❌ No se encontró el destino '{alias}'."
+                except Exception as e:
+                    return f"❌ Error: {e}"
+            return "🔍 Indica qué destino eliminar. Ej: 'borra el destino universidad'"
+
+        if etiqueta == "eliminar_regla" or re.search(r'(?:eliminar|quitar)\s+regla\s+\.?([A-Za-z0-9]+)', texto, re.IGNORECASE):
+            m_elim = re.search(r'(?:elimina|borra|quita|suprime|deshazte de|desactiva)\s+(?:la regla(?: de(?: la| las)?)?|el filtro(?: de(?: los)?)?|esa regla de|la condicion que mueve)\s+(?:los archivos|extensiones|palabra clave)?\s*\.?([\w\d_-\s]+)', texto, re.IGNORECASE)
+            if not m_elim:
+                m_elim = re.search(r'\.?([A-Za-z0-9]+)$', texto)
+            if m_elim:
+                ext_o_clave = m_elim.group(1).strip().lower()
+                ext_o_clave = re.sub(r'^(el|la|los|las)\s+', '', ext_o_clave).strip()
+                if ext_o_clave.startswith('.'):
+                    ext_o_clave = f'.{ext_o_clave.strip(".")}'
+                else:
+                    if len(ext_o_clave) <= 4 and " " not in ext_o_clave and ext_o_clave.isalnum():
+                        ext_o_clave = f'.{ext_o_clave}'
+                try:
+                    ok = False
+                    if getattr(self.modelo_org, 'gestor', None):
+                        ok = self.modelo_org.gestor.eliminar_regla(ext_o_clave)
+                    if ok:
+                        try:
+                            self.actualizar_reglas_en_memoria()
+                            app_signals.stats_changed.emit()
+                        except: pass
+                        return f"✅ Regla eliminada: {ext_o_clave}"
+                    return f"❌ No se encontró la regla '{ext_o_clave}'."
+                except Exception as e:
+                    return f"❌ Error al eliminar regla: {e}"
+            return "🔍 Indica qué regla eliminar. Ej: 'elimina la regla pdf'"
 
         # Listados: 'listar reglas', 'mostrar destinos', 'mostrar orígenes'
         m_list = re.search(r'^(?:listar|mostrar)\s+(reglas|destinos|origenes|orígenes|origenes)$', texto, re.IGNORECASE)

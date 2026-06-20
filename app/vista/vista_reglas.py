@@ -192,6 +192,13 @@ class VistaReglasOrganizacion(QWidget):
         except Exception:
             pass
 
+        # Refrescar lista de reglas cuando el asistente crea/elimina una
+        try:
+            from app.signals import app_signals as _sigs
+            _sigs.stats_changed.connect(self._refrescar_por_senal)
+        except Exception:
+            pass
+
     def init_ui(self):
         layout_principal = QVBoxLayout(self)
         layout_principal.setContentsMargins(40, 40, 40, 40)
@@ -514,23 +521,13 @@ class VistaReglasOrganizacion(QWidget):
     # LÓGICA BASE DE DATOS Y REGLAS
     # =========================================================================
     def conectar_db(self):
-        if not self.asistente: return None, None
         import sqlite3
-        conn = sqlite3.connect(str(self.asistente.modelo_org.db_path))
+        from pathlib import Path
+        # Forzar el uso de la BD central
+        db_path = Path(__file__).resolve().parent.parent / 'recursos' / 'organizador.db'
+        conn = sqlite3.connect(str(db_path))
         conn.execute("PRAGMA foreign_keys = ON")
         cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS reglas_organizacion (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                nombre TEXT NOT NULL,
-                extension TEXT,
-                palabras_clave TEXT,
-                carpeta_destino TEXT NOT NULL,
-                activa BOOLEAN DEFAULT 1,
-                fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        conn.commit()
         return conn, cursor
 
     def actualizar_selector_carpetas(self):
@@ -568,6 +565,13 @@ class VistaReglasOrganizacion(QWidget):
         super().showEvent(event)
         try:
             # Forzar actualización dinámica cada vez que la vista se muestra
+            self.actualizar_selector_carpetas()
+        except Exception:
+            pass
+
+    def _refrescar_por_senal(self):
+        """Refresca selector de carpetas y lista de reglas al recibir stats_changed."""
+        try:
             self.actualizar_selector_carpetas()
         except Exception:
             pass
@@ -662,11 +666,29 @@ class VistaReglasOrganizacion(QWidget):
             conn, cursor = self.conectar_db()
             cursor.execute("INSERT INTO reglas_organizacion (nombre, extension, palabras_clave, carpeta_destino, activa) VALUES (?, ?, ?, ?, ?)", 
                            (nombre, ext_serializada, palabras_serializadas, carpeta, activa))
+            
+            # Obtener el ID de la regla recién insertada
+            regla_id = cursor.lastrowid
+            
+            # Guardar también en la nueva tabla regla_extensiones para compatibilidad
+            if ext_raw and ext_raw != "*":
+                for ext in lista_ext:
+                    ext_normalizada = f".{ext}" if not ext.startswith(".") else ext
+                    cursor.execute("INSERT INTO regla_extensiones (regla_id, extension) VALUES (?, ?)", (regla_id, ext_normalizada))
+                    
             conn.commit()
             conn.close()
             
             self._limpiar_formulario()
             self.cargar_reglas_por_carpeta() 
+            
+            # Notificar que se actualizaron los stats/reglas si es posible
+            try:
+                from app.signals import app_signals
+                app_signals.stats_changed.emit()
+            except Exception:
+                pass
+                
         except Exception as e:
             QMessageBox.critical(self, "Error", f"No se pudo guardar: {e}")
 
