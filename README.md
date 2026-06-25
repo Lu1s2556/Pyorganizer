@@ -2,7 +2,7 @@
 
 ![Python Version](https://img.shields.io/badge/Python-3.12%2B-blue)
 ![Framework](https://img.shields.io/badge/PySide6-GUI-green)
-![AI/ML](https://img.shields.io/badge/AI-scikit--learn%20%7C%20nltk%20%7C%20fastText-orange)
+![AI/ML](https://img.shields.io/badge/fastText-orange)
 
 **PyOrganizer** (también conocido como VigiData) es un bot inteligente de escritorio diseñado para monitorear, clasificar y organizar archivos de forma automática. Integra modelos de Machine Learning y procesamiento de lenguaje natural (NLP) para tomar decisiones inteligentes sobre la ubicación de los archivos.
 
