@@ -11,7 +11,7 @@ def get_total_movidos(db_path: str) -> int:
     conn = _connect(db_path)
     try:
         cur = conn.cursor()
-        cur.execute('SELECT COUNT(*) FROM historial_operaciones')
+        cur.execute('SELECT COUNT(*) FROM historial')
         row = cur.fetchone()
         return int(row[0]) if row else 0
     finally:
@@ -33,7 +33,7 @@ def obtener_archivos_por_tipo(db_path: str, limite: int = 10):
     conn = _connect(db_path)
     try:
         cur = conn.cursor()
-        cur.execute("SELECT extension, COUNT(*) as cnt FROM historial_operaciones GROUP BY extension ORDER BY cnt DESC LIMIT ?", (limite,))
+        cur.execute("SELECT tipo, COUNT(*) as cnt FROM historial GROUP BY tipo ORDER BY cnt DESC LIMIT ?", (limite,))
         return [(row[0] if row[0] is not None else 'sin_extension', row[1]) for row in cur.fetchall()]
     finally:
         conn.close()

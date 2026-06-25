@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                                QLineEdit, QPushButton, QFrame, QTableWidget, 
-                               QTableWidgetItem, QHeaderView, QMessageBox, QFileDialog, QScrollArea)
+                               QTableWidgetItem, QHeaderView, QMessageBox, QFileDialog, QScrollArea, QComboBox)
 from PySide6.QtGui import QFont, QCursor
 from PySide6.QtCore import Qt
 from app.signals import app_signals
@@ -22,6 +22,12 @@ class VistaConfiguracionGlobal(QWidget):
         
         try:
             self.agregar_mensaje_sistema("Estoy aquí por si necesitas ayuda configurando.")
+        except Exception:
+            pass
+            
+        try:
+            app_signals.destinos_changed.connect(self.cargar_destinos)
+            app_signals.origenes_changed.connect(self.cargar_origenes)
         except Exception:
             pass
 
@@ -181,6 +187,27 @@ class VistaConfiguracionGlobal(QWidget):
         layout_inferior.addWidget(btn_volver, alignment=Qt.AlignBottom | Qt.AlignLeft)
 
         layout_inferior.addStretch()
+
+        # Configurar Intervalo de Escaneo (ponytail: vista lateral pedida, simplificada aquí)
+        lbl_intervalo = QLabel("Frecuencia Escaneo:")
+        lbl_intervalo.setStyleSheet("color: #a1a1aa; font-size: 13px; font-weight: bold;")
+        self.combo_intervalo = QComboBox()
+        self.combo_intervalo.addItems(["1 min", "5 min", "15 min", "30 min", "60 min"])
+        self.combo_intervalo.setStyleSheet("background-color: rgba(0, 0, 0, 0.3); color: white; padding: 5px; border-radius: 4px;")
+        self.combo_intervalo.setFixedSize(80, 30)
+        # Cargar config actual
+        try:
+            if getattr(self.asistente.modelo_org, 'gestor', None):
+                val = int(self.asistente.modelo_org.gestor.obtener_configuracion("intervalo_escaneo_min", 5) or 5)
+                idx = self.combo_intervalo.findText(f"{val} min")
+                if idx >= 0: self.combo_intervalo.setCurrentIndex(idx)
+        except: pass
+        self.combo_intervalo.currentIndexChanged.connect(self.guardar_intervalo)
+        
+        layout_inferior.addWidget(lbl_intervalo, alignment=Qt.AlignBottom | Qt.AlignRight)
+        layout_inferior.addWidget(self.combo_intervalo, alignment=Qt.AlignBottom | Qt.AlignRight)
+
+        layout_inferior.addSpacing(20)
 
         # 2. Botón estilo "Burbuja" para abrir el chat
         self.btn_abrir_chat = QPushButton("💬 Asistente")
@@ -374,6 +401,12 @@ class VistaConfiguracionGlobal(QWidget):
             cursor.execute("SELECT id, ruta FROM carpetas_monitoreadas WHERE activa = 1")
             filas = cursor.fetchall()
             conn.close()
+            
+            nuevos_ids = [str(f[0]) for f in filas]
+            ids_actuales = [self.tabla_origenes.item(i, 1).text() for i in range(self.tabla_origenes.rowCount()) if self.tabla_origenes.item(i, 1)]
+            if nuevos_ids == ids_actuales:
+                return
+            
             self.tabla_origenes.setRowCount(0)
             for idx, fila in enumerate(filas):
                 self.tabla_origenes.insertRow(idx)
@@ -437,6 +470,12 @@ class VistaConfiguracionGlobal(QWidget):
             cursor.execute("SELECT id, nombre_alias, ruta FROM directorios_destino")
             filas = cursor.fetchall()
             conn.close()
+            
+            nuevos_ids = [str(f[0]) for f in filas]
+            ids_actuales = [self.tabla_destinos.item(i, 0).text() for i in range(self.tabla_destinos.rowCount()) if self.tabla_destinos.item(i, 0)]
+            if nuevos_ids == ids_actuales:
+                return
+                
             self.tabla_destinos.setRowCount(0)
             for idx, fila in enumerate(filas):
                 self.tabla_destinos.insertRow(idx)
@@ -478,4 +517,13 @@ class VistaConfiguracionGlobal(QWidget):
                 app_signals.destinos_changed.emit()
             except Exception:
                 pass
-        except Exception: pass
+        except Exception:
+            pass
+
+    def guardar_intervalo(self, index):
+        val_str = self.combo_intervalo.currentText().split()[0]
+        try:
+            if getattr(self.asistente.modelo_org, 'gestor', None):
+                self.asistente.modelo_org.gestor.guardar_configuracion("intervalo_escaneo_min", val_str)
+                QMessageBox.information(self, "Guardado", "Se requiere reiniciar para aplicar el intervalo.")
+        except: pass

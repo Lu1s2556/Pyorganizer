@@ -149,6 +149,7 @@ class AsistenteVigiData:
                     pass
                 try:
                     app_signals.stats_changed.emit()
+                    app_signals.origenes_changed.emit()
                 except Exception:
                     pass
                 return f"✅ ¡Origen configurado! Ahora vigilo: {carpeta_final}{mensaje_adicional}"
@@ -343,6 +344,7 @@ class AsistenteVigiData:
                         pass
                     try:
                         app_signals.stats_changed.emit()
+                        app_signals.destinos_changed.emit()
                     except Exception:
                         pass
                     return f"✅ Carpeta creada y registrada: {alias} → {ruta}"
@@ -519,7 +521,8 @@ class AsistenteVigiData:
                     if ok:
                         try:
                             app_signals.stats_changed.emit()
-                        except: pass
+                            app_signals.origenes_changed.emit()
+                        except Exception: pass
                         return f"✅ Origen eliminado: {alias}"
                     return f"❌ No se encontró el origen '{alias}'."
                 except Exception as e:
@@ -538,7 +541,8 @@ class AsistenteVigiData:
                     if ok:
                         try:
                             app_signals.stats_changed.emit()
-                        except: pass
+                            app_signals.destinos_changed.emit()
+                        except Exception: pass
                         return f"✅ Destino eliminado: {alias}"
                     return f"❌ No se encontró el destino '{alias}'."
                 except Exception as e:

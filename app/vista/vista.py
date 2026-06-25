@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QStackedWidget, QMessageBox)
 from PySide6.QtCore import Qt, QSize, QThread, Signal, QTimer
 from PySide6.QtGui import QColor, QFont, QPainter, QGuiApplication, QCursor
-from PySide6.QtCharts import QChartView, QChart, QBarSeries, QBarSet, QBarCategoryAxis, QValueAxis, QPieSeries, QPieSlice
+from PySide6.QtCharts import QChartView, QChart, QBarSeries, QHorizontalBarSeries, QBarSet, QBarCategoryAxis, QValueAxis, QPieSeries, QPieSlice
 
 from app.services import get_total_movidos, get_total_reglas
 from app.signals import app_signals
@@ -116,7 +116,10 @@ class DashboardOrganizador(QMainWindow):
         try:
             self.temporizador_escaneo = QTimer(self)
             self.temporizador_escaneo.timeout.connect(self.iniciar_escaneo)
-            self.temporizador_escaneo.start(60000)
+            intervalo = 5
+            if getattr(self.asistente.modelo_org, 'gestor', None):
+                intervalo = int(self.asistente.modelo_org.gestor.obtener_configuracion("intervalo_escaneo_min", 5) or 5)
+            self.temporizador_escaneo.start(intervalo * 60000)
         except Exception:
             pass
 
@@ -575,61 +578,36 @@ class DashboardOrganizador(QMainWindow):
                         text_color = QColor("#e4e4e7")
                         accent_color = QColor("#eab308")
 
-                        # Si hay muchas categorías, usar gráfico de barras para mejor legibilidad
-                        if top_archivos and len(top_archivos) > 6:
+                        # ponytail: intentional simplification, YAGNI pie chart, always use horizontal bar to fit widget
+                        if top_archivos:
                             categorias = [ext for ext, _ in top_archivos]
                             valores = [cnt for _, cnt in top_archivos]
                             set_series = QBarSet('Cantidad')
                             for v in valores:
                                 set_series.append(v)
-                            bar_series = QBarSeries()
+                            bar_series = QHorizontalBarSeries()
                             bar_series.append(set_series)
 
                             grafico = QChart()
                             grafico.addSeries(bar_series)
                             grafico.setAnimationOptions(QChart.SeriesAnimations)
-                            axis_x = QBarCategoryAxis()
-                            axis_x.append(categorias)
-                            try:
-                                axis_x.setLabelsAngle(45)
-                            except Exception:
-                                pass
-                            axis_x.setLabelsBrush(text_color)
-                            grafico.addAxis(axis_x, Qt.AlignBottom)
-                            bar_series.attachAxis(axis_x)
-
-                            axis_y = QValueAxis()
+                            axis_y = QBarCategoryAxis()
+                            axis_y.append(categorias)
                             axis_y.setLabelsBrush(text_color)
                             grafico.addAxis(axis_y, Qt.AlignLeft)
                             bar_series.attachAxis(axis_y)
 
+                            axis_x = QValueAxis()
+                            axis_x.setLabelsBrush(text_color)
+                            grafico.addAxis(axis_x, Qt.AlignBottom)
+                            bar_series.attachAxis(axis_x)
+
                             grafico.legend().setVisible(False)
                             grafico.setTitle('Distribución por extensión')
                         else:
-                            series = QPieSeries()
-                            total = sum([cnt for _, cnt in top_archivos]) if top_archivos else 0
-                            for idx, (ext, cnt) in enumerate(top_archivos):
-                                slice = QPieSlice(ext, cnt)
-                                slice.setLabelVisible(True)
-                                slice.setLabel(f"{ext} ({cnt})")
-                                slice.setBrush(QColor(colors[idx % len(colors)]))
-                                slice.setBorderColor(QColor(255, 255, 255, 60))
-                                slice.setLabelColor(text_color)
-                                series.append(slice)
-                            # Si no hay datos, mostrar un slice único
-                            if not top_archivos:
-                                s = QPieSlice('Sin datos', 1)
-                                s.setLabelVisible(True)
-                                s.setBrush(QColor("#6b7280"))
-                                s.setBorderColor(QColor(255, 255, 255, 60))
-                                s.setLabelColor(text_color)
-                                series.append(s)
-
+                            # Empty chart
                             grafico = QChart()
-                            grafico.addSeries(series)
-                            grafico.setAnimationOptions(QChart.SeriesAnimations)
-                            grafico.legend().setAlignment(Qt.AlignRight)
-                            grafico.setTitle('Distribución por extensión')
+                            grafico.setTitle('Distribución por extensión (Sin datos)')
 
                         # Harmonizar colores y márgenes con el tema de la app
                         try:
