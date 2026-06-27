@@ -188,27 +188,6 @@ class VistaConfiguracionGlobal(QWidget):
 
         layout_inferior.addStretch()
 
-        # Configurar Intervalo de Escaneo (ponytail: vista lateral pedida, simplificada aquí)
-        lbl_intervalo = QLabel("Frecuencia Escaneo:")
-        lbl_intervalo.setStyleSheet("color: #a1a1aa; font-size: 13px; font-weight: bold;")
-        self.combo_intervalo = QComboBox()
-        self.combo_intervalo.addItems(["1 min", "5 min", "15 min", "30 min", "60 min"])
-        self.combo_intervalo.setStyleSheet("background-color: rgba(0, 0, 0, 0.3); color: white; padding: 5px; border-radius: 4px;")
-        self.combo_intervalo.setFixedSize(80, 30)
-        # Cargar config actual
-        try:
-            if getattr(self.asistente.modelo_org, 'gestor', None):
-                val = int(self.asistente.modelo_org.gestor.obtener_configuracion("intervalo_escaneo_min", 5) or 5)
-                idx = self.combo_intervalo.findText(f"{val} min")
-                if idx >= 0: self.combo_intervalo.setCurrentIndex(idx)
-        except: pass
-        self.combo_intervalo.currentIndexChanged.connect(self.guardar_intervalo)
-        
-        layout_inferior.addWidget(lbl_intervalo, alignment=Qt.AlignBottom | Qt.AlignRight)
-        layout_inferior.addWidget(self.combo_intervalo, alignment=Qt.AlignBottom | Qt.AlignRight)
-
-        layout_inferior.addSpacing(20)
-
         # 2. Botón estilo "Burbuja" para abrir el chat
         self.btn_abrir_chat = QPushButton("💬 Asistente")
         self.btn_abrir_chat.setCursor(QCursor(Qt.PointingHandCursor))
@@ -519,11 +498,3 @@ class VistaConfiguracionGlobal(QWidget):
                 pass
         except Exception:
             pass
-
-    def guardar_intervalo(self, index):
-        val_str = self.combo_intervalo.currentText().split()[0]
-        try:
-            if getattr(self.asistente.modelo_org, 'gestor', None):
-                self.asistente.modelo_org.gestor.guardar_configuracion("intervalo_escaneo_min", val_str)
-                QMessageBox.information(self, "Guardado", "Se requiere reiniciar para aplicar el intervalo.")
-        except: pass

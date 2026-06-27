@@ -19,7 +19,8 @@ from app.core.motor_organizador import MotorOrganizadorCore, HiloOrganizador
 # Importaciones de controladores y sub-vistas modulares
 from app.controlador.controlador_asistente import AsistenteVigiData
 from app.vista.vista_reglas import VistaReglasOrganizacion
-from app.vista.vista_configuracion import VistaConfiguracionGlobal 
+from app.vista.vista_configuracion import VistaConfiguracionGlobal
+from app.vista.vista_avanzado import VistaAvanzado
 
 from collections import deque
 
@@ -234,6 +235,11 @@ class DashboardOrganizador(QMainWindow):
         self.boton_reglas.clicked.connect(lambda: self.cambiar_vista(2, self.boton_reglas))
         distribucion_lateral.addWidget(self.boton_reglas)
 
+        self.boton_avanzado = QPushButton("Opciones Avanzadas")
+        self.boton_avanzado.setStyleSheet(self.estilo_boton_base)
+        self.boton_avanzado.clicked.connect(lambda: self.cambiar_vista(3, self.boton_avanzado))
+        distribucion_lateral.addWidget(self.boton_avanzado)
+
         distribucion_lateral.addStretch()
         
         # Botón de Escaneo
@@ -268,10 +274,16 @@ class DashboardOrganizador(QMainWindow):
             asistente=self.asistente, 
             callback_regresar=lambda: self.cambiar_vista(0, self.boton_resumen)
         )
+        
+        self.vista_avanzado = VistaAvanzado(
+            asistente=self.asistente,
+            callback_regresar=lambda: self.cambiar_vista(0, self.boton_resumen)
+        )
 
         self.pila_vistas.addWidget(self.vista_panel)     
         self.pila_vistas.addWidget(self.vista_configuracion) 
         self.pila_vistas.addWidget(self.vista_reglas)     
+        self.pila_vistas.addWidget(self.vista_avanzado)
 
         # Refrescar vistas cuando cambie la pestaña activa (p. ej. recargar carpetas destino)
         try:
@@ -287,6 +299,7 @@ class DashboardOrganizador(QMainWindow):
         self.boton_resumen.setStyleSheet(self.estilo_boton_base)
         self.boton_configuracion.setStyleSheet(self.estilo_boton_base)
         self.boton_reglas.setStyleSheet(self.estilo_boton_base)
+        self.boton_avanzado.setStyleSheet(self.estilo_boton_base)
         
         boton_activo.setStyleSheet(self.estilo_boton_activo)
 
