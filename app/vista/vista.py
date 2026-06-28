@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QScrollArea, QLineEdit, QApplication,
                                QStackedWidget, QMessageBox)
 from PySide6.QtCore import Qt, QSize, QThread, Signal, QTimer
-from PySide6.QtGui import QColor, QFont, QPainter, QGuiApplication, QCursor
+from PySide6.QtGui import QColor, QFont, QPainter, QGuiApplication, QCursor, QPixmap
 from PySide6.QtCharts import QChartView, QChart, QBarSeries, QHorizontalBarSeries, QBarSet, QBarCategoryAxis, QValueAxis, QPieSeries, QPieSlice
 
 from app.services import get_total_movidos, get_total_reglas
@@ -196,7 +196,16 @@ class DashboardOrganizador(QMainWindow):
         contenedor_logo = QWidget()
         distribucion_logo = QVBoxLayout(contenedor_logo)
         distribucion_logo.setContentsMargins(25, 35, 25, 25)
-        etiqueta_logo = QLabel("📁 PyOrganizer")
+        
+        imagen_logo = QLabel()
+        ruta_logo = str(Path(__file__).parent.parent.parent / "logo.png")
+        pixmap = QPixmap(ruta_logo)
+        if not pixmap.isNull():
+            pixmap = pixmap.scaled(120, 120, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            imagen_logo.setPixmap(pixmap)
+            distribucion_logo.addWidget(imagen_logo)
+            
+        etiqueta_logo = QLabel("PyOrganizer")
         etiqueta_logo.setStyleSheet("color: #ffffff; font-size: 22px; font-weight: 800; border: none;")
         distribucion_logo.addWidget(etiqueta_logo)
         distribucion_lateral.addWidget(contenedor_logo)
