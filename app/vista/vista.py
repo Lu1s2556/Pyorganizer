@@ -198,7 +198,11 @@ class DashboardOrganizador(QMainWindow):
         distribucion_logo.setContentsMargins(25, 35, 25, 25)
         
         imagen_logo = QLabel()
-        ruta_logo = str(Path(__file__).parent.parent.parent / "logo.png")
+        if getattr(sys, 'frozen', False):
+            base_dir = Path(sys._MEIPASS)
+        else:
+            base_dir = Path(__file__).parent.parent.parent
+        ruta_logo = str(base_dir / "logo.png")
         pixmap = QPixmap(ruta_logo)
         if not pixmap.isNull():
             pixmap = pixmap.scaled(120, 120, Qt.KeepAspectRatio, Qt.SmoothTransformation)
