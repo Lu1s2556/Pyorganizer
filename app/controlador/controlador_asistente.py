@@ -740,13 +740,23 @@ class AsistenteVigiData:
             shutil.move(str(archivo_path), str(ruta_final_archivo))
 
             # Registro persistente en el historial técnico
-            self.modelo_org.registrar_accion(
-                nombre=ruta_final_archivo.name,
-                tipo=ruta_final_archivo.suffix,
-                origen=str(origen_padre),
-                destino=str(ruta_final_dir),
-                tamano_bytes=tamano_archivo
-            )
+            if getattr(self.modelo_org, 'gestor', None):
+                self.modelo_org.gestor.registrar_operacion(
+                    nombre_archivo=ruta_final_archivo.name,
+                    extension=ruta_final_archivo.suffix.lower(),
+                    ruta_origen=str(origen_padre),
+                    ruta_destino=str(ruta_final_dir),
+                    tipo_operacion='mover',
+                    tamano_bytes=tamano_archivo
+                )
+            else:
+                self.modelo_org.registrar_accion(
+                    nombre=ruta_final_archivo.name,
+                    tipo=ruta_final_archivo.suffix,
+                    origen=str(origen_padre),
+                    destino=str(ruta_final_dir),
+                    tamano_bytes=tamano_archivo
+                )
             return True
         except Exception as e:
             print(f"Error interno en _move_and_register: {e}")

@@ -22,33 +22,69 @@ def ejecutar_organizador():
     """
     try:
         # Importación bajo demanda (Lazy Loading) para optimizar RAM
-        from PySide6.QtWidgets import QApplication
+        from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
+        from PySide6.QtGui import QIcon
         from app.vista.vista import DashboardOrganizador
+        import sqlite3
+        from pathlib import Path
 
         # Inicialización de la aplicación Qt
         aplicacion = QApplication(sys.argv)
         aplicacion.setStyle("Fusion") # Estilo consistente en Windows/Linux
+        
+        # Evitar que se cierre al ocultar la ventana
+        aplicacion.setQuitOnLastWindowClosed(False)
+
+        # Configurar icono global
+        ruta_base = Path(__file__).resolve().parent
+        icon_path = str(ruta_base / 'logo.ico')
+        if Path(icon_path).exists():
+            app_icon = QIcon(icon_path)
+            aplicacion.setWindowIcon(app_icon)
+        else:
+            app_icon = QIcon()
 
         # Instancia de la interfaz
         ventana = DashboardOrganizador()
-        ventana.show()
+        
+        # Configurar System Tray (icono en la bandeja)
+        tray = QSystemTrayIcon(app_icon, aplicacion)
+        menu = QMenu()
+        abrir_action = menu.addAction("Abrir Panel")
+        abrir_action.triggered.connect(lambda: (ventana.show(), ventana.activateWindow()))
+        salir_action = menu.addAction("Salir por completo")
+        salir_action.triggered.connect(aplicacion.quit)
+        tray.setContextMenu(menu)
+        tray.activated.connect(lambda r: (ventana.show(), ventana.activateWindow()) if r == QSystemTrayIcon.DoubleClick else None)
+        tray.show()
+
+        # Determinar si hay configuración previa para iniciar en segundo plano
+        db_path_str = str(ruta_base / 'app' / 'recursos' / 'organizador.db')
+        iniciar_oculto = False
+        if Path(db_path_str).exists():
+            try:
+                with sqlite3.connect(db_path_str) as conn:
+                    cur = conn.cursor()
+                    cur.execute("SELECT COUNT(*) FROM carpetas_monitoreadas")
+                    if cur.fetchone()[0] > 0:
+                        iniciar_oculto = True
+            except Exception:
+                pass
+
+        if not iniciar_oculto:
+            ventana.show()
+        else:
+            tray.showMessage("PyOrganizer VigiData", "Iniciado en segundo plano. Doble clic para abrir.", QSystemTrayIcon.Information, 3000)
 
         # Iniciar WatcherThread para monitoreo en segundo plano
         try:
             from app.controlador.watcher_thread import WatcherThread
-            from pathlib import Path
-            db_path = str(Path(__file__).resolve().parent / 'app' / 'recursos' / 'organizador.db')
-            watcher = WatcherThread(db_path)
-            # Conectar señales para logging básico
+            watcher = WatcherThread(db_path_str)
             watcher.started_ok.connect(lambda: print("Watcher iniciado"))
             watcher.error.connect(lambda msg: print(f"Watcher error: {msg}"))
-            watcher.move_result = getattr(watcher, 'move_result', None)
             watcher.start()
         except Exception as e:
             print(f"No se pudo iniciar WatcherThread: {e}")
-
-        print(" Interfaz VigiData iniciada correctamente.")
-        print(" Memoria optimizada para entorno de 8GB RAM.")
 
         # Ejecución del bucle de eventos
         try:

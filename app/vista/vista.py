@@ -74,6 +74,12 @@ class DashboardOrganizador(QMainWindow):
         self.escaneo_en_progreso = False
         
         self.setWindowTitle("PyOrganizer - Panel de Control")
+        
+        # Configurar icono desde logo.png
+        from PySide6.QtGui import QIcon
+        ruta_base = Path(__file__).resolve().parent.parent.parent
+        self.setWindowIcon(QIcon(str(ruta_base / 'logo.png')))
+        
         self.resize(1200, 800)
         # Fondo oscuro principal
         self.setStyleSheet("QMainWindow { background-color: #09090b; }")
@@ -852,18 +858,14 @@ class DashboardOrganizador(QMainWindow):
 
     def mostrar_ayuda(self):
         ejemplos = [
-            "📂 <b>Carpetas:</b> 'hazme una carpeta llamada recibos'",
-            "📍 <b>Orígenes:</b> 'vigila una carpeta' → se abre el explorador",
-            "🎯 <b>Destinos:</b> 'pon destino llamado <i>mi_alias</i>' → se abre el explorador",
-            "⚙️ <b>Reglas:</b> 'si ves un .mp4, mételo en <i>alias_destino</i>'",
+            "📍 <b>Orígenes:</b> 'monitorea la carpeta' → se abre el explorador",
+            "🎯 <b>Destinos:</b> 'pon destino <i>mi_alias</i>' → se abre el explorador",
+            "⚙️ <b>Reglas:</b> '<i>Extension</i> mételo en <i>alias_destino</i>'",
             "🧹 <b>Mover:</b> 'echa todos los pdf a la carpeta de la uni'",
-            "🗑️ <b>Eliminar:</b> 'olvida la regla de los pdf', 'ya no vigiles documentos'",
-            "📋 <b>Listados:</b> 'listar reglas', 'mostrar destinos', 'mostrar origenes'"
         ]
 
-        html_ayuda = f"<div style='color:#e4e4e7; font-size:15px; line-height:1.6; padding-right:10px;'>"
-        html_ayuda += "<b style='color:#eab308; font-size:16px;'>¡Háblame de forma natural!</b><br>"
-        html_ayuda += "<span style='font-size:13px; color:#a3a3a3;'>Usa sinónimos, pide por favor, escribe con errores… yo te entiendo.</span><br><br>"
+        html_ayuda = f"<div style='color:#e4e4e7; font-size:15px; line-height:1.1; padding-right:10px;'>"
+        html_ayuda += "<b style='color:#eab308; font-size:16px;'>¡Comandos Utiles en el chat!</b><br>"
         for ej in ejemplos:
             html_ayuda += f"<div style='margin-bottom:8px;'>{ej}</div>"
         html_ayuda += "<br><span style='font-size:12px; color:#71717a;'>💡 <b>Tip:</b> Para <b>orígenes</b> solo pide vigilar y se abre el explorador. Para <b>destinos</b> menciona un <b>alias</b> (ej: universidad, trabajo) y elige la carpeta.</span>"
