@@ -372,17 +372,18 @@ class GestorBaseDatos:
             self.logar_error("generar_historial", str(e))
             return
 
-    def buscar_en_historial(self, termino_busqueda):
+    def buscar_en_historial(self, termino_busqueda, limite=100):
         try:
             self.db.cursor.execute("""
                 SELECT * FROM historial_operaciones 
                 WHERE nombre_archivo LIKE ? OR ruta_origen LIKE ? OR ruta_destino LIKE ?
                 ORDER BY fecha_operacion DESC
-            """, (f"%{termino_busqueda}%", f"%{termino_busqueda}%", f"%{termino_busqueda}%"))
+                LIMIT ?
+            """, (f"%{termino_busqueda}%", f"%{termino_busqueda}%", f"%{termino_busqueda}%", limite))
             return self.db.cursor.fetchall()
         except sqlite3.Error as e:
             self.logar_error("buscar_en_historial", str(e))
-            return self.db.cursor.fetchall()
+            return []
 
     def obtener_estadisticas(self):
         stats = {}
@@ -432,66 +433,9 @@ class GestorBaseDatos:
 
     def sembrar_si_vacia(self):
         """Inserta datos por defecto si las tablas clave están vacías."""
-        # Verificar directorios origen (carpetas_monitoreadas)
-        self.db.cursor.execute("SELECT COUNT(*) AS cnt FROM carpetas_monitoreadas")
-        cnt_origen = self.db.cursor.fetchone()[0]
-
-        # Verificar directorios destino
-        self.db.cursor.execute("SELECT COUNT(*) AS cnt FROM directorios_destino")
-        cnt_destino = self.db.cursor.fetchone()[0]
-
-        # Verificar reglas
-        self.db.cursor.execute("SELECT COUNT(*) AS cnt FROM reglas_organizacion")
-        cnt_reglas = self.db.cursor.fetchone()[0]
-
-        if cnt_origen == 0:
-            usuario = os.path.expanduser("~")
-            defaults_origen = [
-                (f"{usuario}/Downloads", "Origen_Descargas"),
-                (f"{usuario}/Desktop", "escritorio"),
-                (f"{usuario}/Documents", "documentos"),
-            ]
-            for ruta, alias in defaults_origen:
-                try:
-                    self.agregar_carpeta_monitoreada(ruta, alias)
-                except Exception:
-                    pass
-
-        if cnt_destino == 0:
-            defaults_destino = [
-                (os.path.join(os.path.expanduser("~"), "Imágenes"), "Imágenes"),
-                (os.path.join(os.path.expanduser("~"), "Documentos"), "Destino_Documentos"),
-                (os.path.join(os.path.expanduser("~"), "Programas"), "Programas"),
-            ]
-            for ruta, alias in defaults_destino:
-                try:
-                    self.db.cursor.execute(
-                        "INSERT OR IGNORE INTO directorios_destino (ruta, nombre_alias) VALUES (?, ?)",
-                        (ruta, alias)
-                    )
-                except sqlite3.Error as e:
-                    self.logar_error("seed_directorios_destino", str(e))
-            self.db.confirmar()
-
-        if cnt_reglas == 0:
-            # Asegurar que existen destinos para asociar
-            self.db.cursor.execute("SELECT id, ruta, nombre_alias FROM directorios_destino")
-            destinos = {row['nombre_alias']: row['ruta'] for row in self.db.cursor.fetchall()}
-            # Reglas iniciales simplificadas: vincular Destino_Documentos a .docx, .pdf, .xls
-            destino_docs = destinos.get('Destino_Documentos', os.path.join(os.path.expanduser("~"), "Documents"))
-            reglas_default = [
-                ("Regla_Docx", ".docx", destino_docs),
-                ("Regla_Pdf", ".pdf", destino_docs),
-                ("Regla_Xls", ".xls", destino_docs),
-            ]
-            for nombre, ext, destino in reglas_default:
-                try:
-                    self.agregar_regla(nombre, ext, destino)
-                except Exception:
-                    pass
-
-        # Commit final por si dejó operaciones pendientes
-        self.db.confirmar()
+        # Se ha eliminado la creación de carpetas y reglas predeterminadas 
+        # para distribuir la aplicación con una base de datos limpia.
+        pass
 
     def agregar_regla(self, nombre, extension, carpeta_destino, activa=True, palabras_clave=None):
         try:
@@ -673,19 +617,6 @@ def inicializar_nueva_db():
 
     # Inicializar configuraciones
     gestor.inicializar_configuraciones_default()
-
-    # Agregar carpetas por defecto
-    usuario = os.path.expanduser("~")
-    gestor.agregar_carpeta_monitoreada(f"{usuario}/Downloads", "Origen_Descargas")
-    gestor.agregar_carpeta_monitoreada(f"{usuario}/Desktop", "escritorio")
-    gestor.agregar_carpeta_monitoreada(f"{usuario}/Documents", "documentos")
-
-    # Agregar reglas por defecto
-    # Semilla mínima solicitada: vincular Destino_Documentos con .docx, .pdf, .xls
-    destino_docs = os.path.join(os.path.expanduser("~"), "Documents")
-    gestor.agregar_regla("Regla_Docx", ".docx", destino_docs)
-    gestor.agregar_regla("Regla_Pdf", ".pdf", destino_docs)
-    gestor.agregar_regla("Regla_Xls", ".xls", destino_docs)
 
     # Verificar integridad
     if gestor.verificar_integridad():

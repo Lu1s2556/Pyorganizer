@@ -783,18 +783,18 @@ class DashboardOrganizador(QMainWindow):
 
     def mostrar_ayuda(self):
         ejemplos = [
-            "📂 <b>Carpetas:</b> 'crea una carpeta llamada tesis en *carpeta raiz* '",
-            "📍 <b>Orígenes:</b> 'vigila el escritorio y crea una carpeta 'nombre de carpeta'",
-            "🎯 <b>Destinos:</b> 'registra universidad en documentos'",
-            "⚙️ <b>Reglas:</b> 'los archivos pdf que digan 'palabra clave' van para 'carpeta destino'",
-            "🧹 <b>Mover:</b> 'mueve los docx a mis proyectos'",
-            "🗑️ <b>Eliminar:</b> 'elimina la regla pdf', 'deja de vigilar descargas'",
-            "📊 <b>Estadísticas:</b> 'dame las estadísticas del día'",
+            "📂 <b>Carpetas:</b> 'por favor podrías hacerme una carpeta que se llame recibos'",
+            "📍 <b>Orígenes:</b> 'estate pendiente de la carpeta de descargas a ver que cae'",
+            "🎯 <b>Destinos:</b> 'de ahora en adelante manda las cosas a la universidad'",
+            "⚙️ <b>Reglas:</b> 'si ves un .mp4, mételo de una vez en videos'",
+            "🧹 <b>Mover:</b> 'echa todos los pdf a la carpeta de la uni'",
+            "🗑️ <b>Eliminar:</b> 'olvida la regla de los pdf', 'ya no le pares bola a documentos'",
             "📋 <b>Listados:</b> 'listar reglas', 'mostrar destinos', 'mostrar origenes'"
         ]
 
         html_ayuda = f"<div style='color:#e4e4e7; font-size:15px; line-height:1.6; padding-right:10px;'>"
-        html_ayuda += "<b style='color:#eab308; font-size:16px;'>Comandos Principales:</b><br><br>"
+        html_ayuda += "<b style='color:#eab308; font-size:16px;'>¡Háblame de forma natural!</b><br>"
+        html_ayuda += "<span style='font-size:13px; color:#a3a3a3;'>Puedes usar sinónimos, pedir por favor e incluso escribir con pequeños errores.</span><br><br>"
         for ej in ejemplos:
             html_ayuda += f"<div style='margin-bottom:8px;'>{ej}</div>"
         html_ayuda += "</div>"
