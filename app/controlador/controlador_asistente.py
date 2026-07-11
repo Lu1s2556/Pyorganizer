@@ -105,97 +105,34 @@ class AsistenteVigiData:
         return "🤔 No te entendí del todo. ¿Puedes especificar la carpeta o la regla?"
 
     def _ia_configurar_origen(self, texto: str) -> str:
-        # Detectar ruta base por atajos conocidos
-        ruta_base = None
-        for atajo, path_fisico in self.rutas_atajo.items():
-            if atajo in texto:
-                ruta_base = Path(path_fisico)
-                break
-
-        if not ruta_base:
-            return "🔍 Dime si es 'Descargas', 'Escritorio' o 'Documentos' para añadir el origen."
-
-        # Buscar si el usuario solicita crear una subcarpeta
-        patron_carpeta = r"(?:llamada|carpeta|para|nombre)\s+([a-zA-Z0-9_ñáéíóú]+)"
-        match = re.search(patron_carpeta, texto)
-        carpeta_final = ruta_base
-        mensaje_adicional = ""
-        if match:
-            nombre_subcarpeta = match.group(1).strip()
-            carpeta_final = ruta_base / nombre_subcarpeta
-            try:
-                if not carpeta_final.exists():
-                    carpeta_final.mkdir(parents=True, exist_ok=True)
-                    mensaje_adicional = f" (No existía '{nombre_subcarpeta}', la creé por ti)"
-                else:
-                    mensaje_adicional = f" (La carpeta '{nombre_subcarpeta}' ya existía)"
-            except Exception as e:
-                return f"❌ Intenté crear la subcarpeta '{nombre_subcarpeta}' pero falló: {e}"
-
-        # Registrar en la BD usando API existente
+        # Sin alias: se abre el explorador y se usa el nombre de la carpeta seleccionada
         try:
-            alias = carpeta_final.name
-            ok = None
-            if getattr(self.modelo_org, 'gestor', None):
-                ok = self.modelo_org.gestor.agregar_carpeta_monitoreada(str(carpeta_final), alias)
-            elif hasattr(self.modelo_org, 'agregar_carpeta_monitoreada'):
-                ok = self.modelo_org.agregar_carpeta_monitoreada(str(carpeta_final), alias)
-            if ok == 'integrity_error':
-                return f"❌ La carpeta '{carpeta_final}' ya está siendo monitoreada."
-            if ok:
-                try:
-                    self.actualizar_reglas_en_memoria()
-                except Exception:
-                    pass
-                try:
-                    app_signals.stats_changed.emit()
-                    app_signals.origenes_changed.emit()
-                except Exception:
-                    pass
-                return f"✅ ¡Origen configurado! Ahora vigilo: {carpeta_final}{mensaje_adicional}"
-            return f"❌ No pude registrar '{carpeta_final}' como origen (ya existe o fallo en BD)."
-        except Exception as e:
-            return f"❌ Error guardando origen en BD: {e}"
+            app_signals.solicitar_carpeta_origen.emit("")
+        except Exception:
+            pass
+        return "📂 Abriendo explorador para seleccionar la carpeta de origen..."
 
     def _ia_configurar_destino(self, texto: str) -> str:
-        ruta_base = None
-        for atajo, path_fisico in self.rutas_atajo.items():
-            if atajo in texto:
-                ruta_base = Path(path_fisico)
-                break
+        # Extraer alias del texto del usuario
+        patron_alias = r"(?:llamad[ao]|carpeta|destino|para|nombre|como)\s+([a-zA-Z0-9_ñáéíóúÑÁÉÍÓÚ]+)"
+        match = re.search(patron_alias, texto)
+        alias = match.group(1).strip() if match else ""
 
-        patron_nombre = r"(?:llamado|carpeta|destino)\s+([a-zA-Z0-9_ñáéíóú]+)"
-        match = re.search(patron_nombre, texto)
-        if match and ruta_base:
-            destino_final = ruta_base / match.group(1).strip()
-        elif ruta_base:
-            destino_final = ruta_base
-        else:
-            return "🔍 Dime en qué ubicación (Escritorio, Descargas, Documentos) deseas establecer el destino."
+        if not alias:
+            for atajo in self.rutas_atajo.keys():
+                if atajo in texto:
+                    alias = atajo
+                    break
 
+        if not alias:
+            return "🔍 Dime el alias para este destino. Ejemplo: 'pon destino llamado universidad'"
+
+        # Emitir señal para abrir el explorador de carpetas
         try:
-            destino_final.mkdir(parents=True, exist_ok=True)
-        except Exception as e:
-            return f"❌ No pude crear/verificar la carpeta de destino: {e}"
-
-        try:
-            alias = destino_final.name
-            ok = None
-            if getattr(self.modelo_org, 'gestor', None):
-                ok = self.modelo_org.gestor.agregar_directorio_destino(str(destino_final), alias)
-            elif hasattr(self.modelo_org, 'agregar_directorio_destino'):
-                ok = self.modelo_org.agregar_directorio_destino(str(destino_final), alias)
-            if ok == 'integrity_error':
-                return f"❌ El alias o la ruta ya existen para: {destino_final}"
-            if ok:
-                try:
-                    app_signals.stats_changed.emit()
-                except Exception:
-                    pass
-                return f"🎯 Destino listo. Los archivos se enviarán a: {destino_final}"
-            return f"❌ No se pudo registrar destino en BD: {destino_final}"
-        except Exception as e:
-            return f"❌ Error registrando destino en BD: {e}"
+            app_signals.solicitar_carpeta_destino.emit(alias)
+        except Exception:
+            pass
+        return f"📂 Abriendo explorador para seleccionar la carpeta de destino '{alias}'..."
 
     def _ia_configurar_regla(self, texto: str) -> str:
         # Extraer palabras clave

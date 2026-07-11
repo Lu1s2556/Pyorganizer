@@ -7,12 +7,11 @@ from datetime import datetime
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                                QLabel, QPushButton, QFrame, QGridLayout, 
                                QScrollArea, QLineEdit, QApplication,
-                               QStackedWidget, QMessageBox)
+                               QStackedWidget, QMessageBox, QFileDialog)
 from PySide6.QtCore import Qt, QSize, QThread, Signal, QTimer
 from PySide6.QtGui import QColor, QFont, QPainter, QGuiApplication, QCursor, QPixmap
 from PySide6.QtCharts import QChartView, QChart, QBarSeries, QHorizontalBarSeries, QBarSet, QBarCategoryAxis, QValueAxis, QPieSeries, QPieSlice
 
-from app.services import get_total_movidos, get_total_reglas
 from app.signals import app_signals
 from app.core.motor_organizador import MotorOrganizadorCore, HiloOrganizador
 
@@ -97,6 +96,13 @@ class DashboardOrganizador(QMainWindow):
         try:
             app_signals.stats_changed.connect(self.refrescar_panel_resumen)
             self.refrescar_panel_resumen()
+        except Exception:
+            pass
+
+        # Conectar señales de explorador de carpetas para origen y destino
+        try:
+            app_signals.solicitar_carpeta_origen.connect(self._abrir_dialogo_origen)
+            app_signals.solicitar_carpeta_destino.connect(self._abrir_dialogo_destino)
         except Exception:
             pass
 
@@ -352,9 +358,11 @@ class DashboardOrganizador(QMainWindow):
         total_mov = "0"
         total_reglas = "0"
         try:
-            ruta_bd = self.asistente.modelo_org.db_path
-            total_mov = f"{get_total_movidos(ruta_bd):,}"
-            total_reglas = f"{get_total_reglas(ruta_bd):,}"
+            gestor = getattr(self.asistente.modelo_org, 'gestor', None)
+            if gestor:
+                stats = gestor.obtener_estadisticas()
+                total_mov = f"{stats.get('total_operaciones', 0):,}"
+                total_reglas = f"{len(gestor.obtener_reglas()):,}"
         except Exception:
             pass
 
@@ -462,15 +470,6 @@ class DashboardOrganizador(QMainWindow):
             return
 
         try:
-            try:
-                self.hilo_organizador.progreso_senal.disconnect()
-            except Exception:
-                pass
-            try:
-                self.hilo_organizador.finalizado_senal.disconnect()
-            except Exception:
-                pass
-
             self.hilo_organizador.progreso_senal.connect(self.registrar_accion_interfaz)
             self.hilo_organizador.finalizado_senal.connect(self.finalizar_escaneo)
             self.hilo_organizador.start()
@@ -492,11 +491,6 @@ class DashboardOrganizador(QMainWindow):
         self.boton_escanear.setText("ESCANEAR AHORA")
 
         if hasattr(self, 'hilo_organizador') and self.hilo_organizador is not None:
-            try:
-                self.hilo_organizador.progreso_senal.disconnect()
-                self.hilo_organizador.finalizado_senal.disconnect()
-            except Exception:
-                pass
             self.hilo_organizador = None
 
         import gc
@@ -579,9 +573,15 @@ class DashboardOrganizador(QMainWindow):
 
     def refrescar_panel_resumen(self):
         try:
-            ruta_bd = self.asistente.modelo_org.db_path
-            total_mov = f"{get_total_movidos(ruta_bd):,}"
-            total_reglas = f"{get_total_reglas(ruta_bd):,}"
+            gestor = getattr(self.asistente.modelo_org, 'gestor', None)
+            if gestor:
+                stats = gestor.obtener_estadisticas()
+                total_mov = f"{stats.get('total_operaciones', 0):,}"
+                total_reglas = f"{len(gestor.obtener_reglas()):,}"
+            else:
+                total_mov = "0"
+                total_reglas = "0"
+            
             escaneos = str(self.escaneos_ejecutados)
             # Mostrar solo hora 12H para el último escaneo
             texto_ultimo = self.ultimo_escaneo.strftime("%I:%M %p") if self.ultimo_escaneo else "Nunca"
@@ -591,8 +591,14 @@ class DashboardOrganizador(QMainWindow):
             self.tarjeta_escaneos.actualizar_valor(escaneos)
             self.tarjeta_ultimo.actualizar_valor(texto_ultimo)
             
-            from app.services import obtener_archivos_por_tipo
-            top_archivos = obtener_archivos_por_tipo(ruta_bd, limite=5)
+            top_archivos = []
+            if gestor:
+                try:
+                    cursor = gestor.db.cursor
+                    cursor.execute("SELECT extension, COUNT(*) as cnt FROM historial_operaciones WHERE extension IS NOT NULL GROUP BY extension ORDER BY cnt DESC LIMIT 5")
+                    top_archivos = [(row[0] if row[0] else 'sin_extension', row[1]) for row in cursor.fetchall()]
+                except Exception:
+                    pass
             texto_tipos = " | ".join([f"{ext}: {cnt}" for ext, cnt in top_archivos]) if top_archivos else "Sin datos recientes"
             self.etiqueta_tipos_grafico.setText(texto_tipos)
 
@@ -785,22 +791,82 @@ class DashboardOrganizador(QMainWindow):
         self.entrada_texto.setText(texto_sugerencia)
         self.enviar_comando()
 
+    def _abrir_dialogo_origen(self, _alias_ignorado):
+        """Abre un explorador de carpetas para seleccionar el origen. Usa el nombre de la carpeta como alias."""
+        ruta = QFileDialog.getExistingDirectory(self, "Seleccionar carpeta de origen a vigilar")
+        if not ruta:
+            self.agregar_mensaje_sistema("Selección cancelada.")
+            return
+        alias = Path(ruta).name  # El nombre de la carpeta seleccionada es el alias
+        try:
+            ok = None
+            if getattr(self.asistente.modelo_org, 'gestor', None):
+                ok = self.asistente.modelo_org.gestor.agregar_carpeta_monitoreada(ruta, alias)
+            elif hasattr(self.asistente.modelo_org, 'agregar_carpeta_monitoreada'):
+                ok = self.asistente.modelo_org.agregar_carpeta_monitoreada(ruta, alias)
+            if ok == 'integrity_error':
+                self.agregar_mensaje_sistema(f"La carpeta '{ruta}' ya está siendo monitoreada.")
+                return
+            if ok:
+                try:
+                    self.asistente.actualizar_reglas_en_memoria()
+                except Exception:
+                    pass
+                try:
+                    app_signals.stats_changed.emit()
+                    app_signals.origenes_changed.emit()
+                except Exception:
+                    pass
+                self.agregar_mensaje_sistema(f"Origen configurado: {alias} → {ruta}")
+            else:
+                self.agregar_mensaje_sistema(f"No se pudo registrar '{ruta}' como origen.")
+        except Exception as e:
+            self.agregar_mensaje_sistema(f"Error al registrar origen: {e}")
+
+    def _abrir_dialogo_destino(self, alias):
+        """Abre un explorador de carpetas para seleccionar el destino y lo registra en BD."""
+        ruta = QFileDialog.getExistingDirectory(self, f"Seleccionar carpeta de destino para '{alias}'")
+        if not ruta:
+            self.agregar_mensaje_sistema("Selección cancelada.")
+            return
+        try:
+            ok = None
+            if getattr(self.asistente.modelo_org, 'gestor', None):
+                ok = self.asistente.modelo_org.gestor.agregar_directorio_destino(ruta, alias)
+            elif hasattr(self.asistente.modelo_org, 'agregar_directorio_destino'):
+                ok = self.asistente.modelo_org.agregar_directorio_destino(ruta, alias)
+            if ok == 'integrity_error':
+                self.agregar_mensaje_sistema(f"El alias o la ruta ya existen para: {ruta}")
+                return
+            if ok:
+                try:
+                    app_signals.stats_changed.emit()
+                    app_signals.destinos_changed.emit()
+                except Exception:
+                    pass
+                self.agregar_mensaje_sistema(f"Destino configurado: {alias} → {ruta}")
+            else:
+                self.agregar_mensaje_sistema(f"No se pudo registrar '{ruta}' como destino.")
+        except Exception as e:
+            self.agregar_mensaje_sistema(f"Error al registrar destino: {e}")
+
     def mostrar_ayuda(self):
         ejemplos = [
-            "📂 <b>Carpetas:</b> 'por favor podrías hacerme una carpeta que se llame recibos'",
-            "📍 <b>Orígenes:</b> 'estate pendiente de la carpeta de descargas a ver que cae'",
-            "🎯 <b>Destinos:</b> 'de ahora en adelante manda las cosas a la universidad'",
-            "⚙️ <b>Reglas:</b> 'si ves un .mp4, mételo de una vez en videos'",
+            "📂 <b>Carpetas:</b> 'hazme una carpeta llamada recibos'",
+            "📍 <b>Orígenes:</b> 'vigila una carpeta' → se abre el explorador",
+            "🎯 <b>Destinos:</b> 'pon destino llamado <i>mi_alias</i>' → se abre el explorador",
+            "⚙️ <b>Reglas:</b> 'si ves un .mp4, mételo en <i>alias_destino</i>'",
             "🧹 <b>Mover:</b> 'echa todos los pdf a la carpeta de la uni'",
-            "🗑️ <b>Eliminar:</b> 'olvida la regla de los pdf', 'ya no le pares bola a documentos'",
+            "🗑️ <b>Eliminar:</b> 'olvida la regla de los pdf', 'ya no vigiles documentos'",
             "📋 <b>Listados:</b> 'listar reglas', 'mostrar destinos', 'mostrar origenes'"
         ]
 
         html_ayuda = f"<div style='color:#e4e4e7; font-size:15px; line-height:1.6; padding-right:10px;'>"
         html_ayuda += "<b style='color:#eab308; font-size:16px;'>¡Háblame de forma natural!</b><br>"
-        html_ayuda += "<span style='font-size:13px; color:#a3a3a3;'>Puedes usar sinónimos, pedir por favor e incluso escribir con pequeños errores.</span><br><br>"
+        html_ayuda += "<span style='font-size:13px; color:#a3a3a3;'>Usa sinónimos, pide por favor, escribe con errores… yo te entiendo.</span><br><br>"
         for ej in ejemplos:
             html_ayuda += f"<div style='margin-bottom:8px;'>{ej}</div>"
+        html_ayuda += "<br><span style='font-size:12px; color:#71717a;'>💡 <b>Tip:</b> Para <b>orígenes</b> solo pide vigilar y se abre el explorador. Para <b>destinos</b> menciona un <b>alias</b> (ej: universidad, trabajo) y elige la carpeta.</span>"
         html_ayuda += "</div>"
 
         etiqueta_ayuda = QLabel(html_ayuda)
